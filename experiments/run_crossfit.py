@@ -22,9 +22,6 @@ from pathlib import Path
 from belt_plus.bert_classifier_truncated import BertClassifierTruncated
 from belt_plus.bert_classifier_with_pooling import BertClassifierWithPooling
 from _helpers import *
-    ENCODERS, HP_LR_C, HP_WD_C, HP_DR_C, HP_WARMUP, HP_GRADNORM, HP_TRUNC_BS,
-    timed_eval, HP_LR, HP_WD, HP_DR)
-# (constants now in _helpers)
 from sklearn.model_selection import StratifiedKFold
 from scipy.stats import wilcoxon
 

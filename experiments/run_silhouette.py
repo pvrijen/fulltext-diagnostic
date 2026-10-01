@@ -13,8 +13,6 @@ from sklearn.metrics import silhouette_score
 from belt_plus.bert_classifier_truncated import BertClassifierTruncated
 from belt_plus.bert_classifier_with_pooling import BertClassifierWithPooling
 from _helpers import *
-    HP_LR_C, HP_WD_C, HP_DR_C, HP_WARMUP, HP_GRADNORM, HP_TRUNC_BS, HP_LR, HP_WD, HP_DR)
-# (constants now in _helpers)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--gpu", type=int, required=True)
