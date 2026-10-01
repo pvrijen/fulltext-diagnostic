@@ -138,7 +138,7 @@ def add_contours(ax, e_pos, e_neg, col_pos=COL_POS, col_neg='#999999'):
             zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
             ax.contour(xx, yy, zz, levels=[zz.max() * 0.15], colors=[col_pos],
                       linewidths=1.2, linestyles='--', alpha=0.7)
-        except: pass
+        except Exception: pass
     if len(e_neg) > 10:
         try:
             kde = gaussian_kde(e_neg.T, bw_method=0.4)
@@ -147,7 +147,7 @@ def add_contours(ax, e_pos, e_neg, col_pos=COL_POS, col_neg='#999999'):
             zz = kde(np.vstack([xx.ravel(), yy.ravel()])).reshape(xx.shape)
             ax.contour(xx, yy, zz, levels=[zz.max() * 0.15], colors=[col_neg],
                       linewidths=1.0, linestyles='-', alpha=0.5)
-        except: pass
+        except Exception: pass
 
 fig = plt.figure(figsize=(8.5, 5))
 gs = fig.add_gridspec(2, 3, width_ratios=[1, 1, 0.45], hspace=0.38, wspace=0.3,
