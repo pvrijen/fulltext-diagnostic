@@ -198,7 +198,7 @@ def job_train_C(
         labels = df["label"].values
         tok = AutoTokenizer.from_pretrained(encoder)
         model = AutoModelForSequenceClassification.from_pretrained(
-            encoder, num_labels=2
+            encoder, num_labels=1
         ).to(device)
         tl = _make_loader(
             [texts[i] for i in fi["train"]], labels[fi["train"]],
@@ -232,7 +232,7 @@ def job_train_P(
         ft_max = max_length * 2
         tok = AutoTokenizer.from_pretrained(encoder)
         model = AutoModelForSequenceClassification.from_pretrained(
-            encoder, num_labels=2
+            encoder, num_labels=1
         ).to(device)
         tl = _make_loader(
             [texts[i] for i in fi["train"]], labels[fi["train"]],

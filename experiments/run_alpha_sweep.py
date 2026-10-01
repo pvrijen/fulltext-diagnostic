@@ -18,7 +18,7 @@ from belt_plus.bert_classifier_truncated import BertClassifierTruncated
 from _helpers import *
 
 MODEL = ENCODERS["biomedbert-abs"]
-DATASETS = ["cd011431", "cd012661"]
+DATASETS = ["pfas", "bpa", "cd008122", "cd011431", "cd012069", "cd012661"]
 SEED = 42
 NUDGE_T = 4.0
 NUDGE_LR = 5e-6
