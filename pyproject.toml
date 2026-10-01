@@ -41,8 +41,9 @@ fulltext-diagnostic = "fulltext_diagnostic.cli:main"
 ftd-monitor = "fulltext_diagnostic.tui:run"
 
 [project.urls]
-Homepage = "https://github.com/pvr-biocuration/fulltext-diagnostic"
-Paper = "https://github.com/pvr-biocuration/fulltext-diagnostic"
+Homepage = "https://github.com/pvrijen/fulltext-diagnostic"
+Paper = "https://github.com/pvrijen/fulltext-diagnostic"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["fulltext_diagnostic*", "belt_plus*"]

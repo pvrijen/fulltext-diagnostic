@@ -8,5 +8,5 @@ umap-learn>=0.5
 matplotlib>=3.7
 click>=8.0
 rich>=13.0
-textual>=0.40
+textual>=0.50
 tqdm>=4.60

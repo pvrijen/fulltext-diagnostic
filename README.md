@@ -2,12 +2,15 @@
 
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Status: under review](https://img.shields.io/badge/status-under%20review-orange)
+
+> **Note**: This repository accompanies a manuscript currently under peer review. The code and data are provided for reproducibility; the API may change before the final release.
 
 **Diagnose whether full-text processing helps biomedical literature screening, and transfer knowledge via Privileged Features Distillation (PFD).**
 
 Companion code for:
 
-> van Rijen, P. and Ruch, P. (2026). "Beyond abstracts: diagnosing full-text effects in biomedical screening." *Database* (Oxford University Press).
+> van Rijen, P. et al. (2026). "Beyond the abstract: diagnosing full-text effects in biomedical screening." *Journal of the American Medical Informatics Association* (under review).
 
 ## Installation
 
@@ -18,7 +21,7 @@ pip install fulltext-diagnostic
 Or install from source:
 
 ```bash
-git clone https://github.com/pvr-biocuration/fulltext-diagnostic.git
+git clone https://github.com/pvrijen/fulltext-diagnostic.git
 cd fulltext-diagnostic
 pip install -e .
 ```
@@ -32,6 +35,10 @@ Create a CSV with columns:
 - `text_abstract`: abstract text
 - `text_fulltext`: full-text (body sections concatenated)
 - `label`: binary label (1 = included, 0 = excluded)
+
+The six datasets used in the paper are not distributed here. To obtain them:
+- **PFAS, BPA**: Howard et al. via [HAWC Project](https://hawcproject.org/) (SWIFT-Review export)
+- **CD008122, CD011431, CD012069, CD012661**: [CLEF eHealth TAR](https://ceur-ws.org/Vol-1866/) shared tasks
 
 ### 2. Run the diagnostic (two training runs)
 
@@ -61,9 +68,9 @@ Output:
 +-----------------------+------------+-----------------+
 | Metric                | Value      | Interpretation  |
 +-----------------------+------------+-----------------+
-| Training Effect (TE)  | -0.058     | FT training hurts|
+| Training Effect (TE)  | -0.051     | FT training hurts|
 | Inference Effect (IE) | +0.074     | Body text helps  |
-| Total Effect          | +0.017     | Nearly cancel    |
+| Total Effect          | +0.023     | Nearly cancel    |
 +-----------------------+------------+-----------------+
 
 Recommendation: PFD is recommended.
@@ -162,11 +169,15 @@ Quick summary of the mapping:
 
 | Artifact | Script |
 |----------|--------|
-| Table 2 (encoders) | `experiments/run_encoders.sh` |
-| Table 3, 10--11 (decomposition) | `experiments/run_decomposition.sh` |
-| Table 4, 8 (cross-fitted PFD) | `experiments/run_crossfit.py` |
-| Table 6 (LLM baselines) | `experiments/run_llm.py` |
-| Table 9 (multi-encoder) | `experiments/run_multi_encoder.sh` |
+| Table 2 (encoders) | `experiments/run_crossfit.py` (C condition, `--encoder` flag) |
+| Table 3 (decomposition) | `experiments/run_crossfit.py` (C + P conditions) |
+| Table 4 (KD strategies) | `experiments/run_crossfit.py` (six KD variants) |
+| Table 5 (cross-fitted PFD) | `experiments/run_crossfit.py` |
+| Table 6 (operating points) | Computed from Tables 3 + 5 |
+| Table 7 (LLM baselines) | `experiments/run_llm.py` |
+| Table 9 (per-fold) | `experiments/run_crossfit.py` |
+| Table 10 (multi-encoder decomp) | `experiments/run_crossfit.py --encoder <name>` |
+| Table 11 (WSS@95 decomp) | `experiments/run_crossfit.py` |
 | Table 12 (alpha sweep) | `experiments/run_alpha_sweep.py` |
 | Table 13 (silhouette) | `experiments/run_silhouette.py` |
 | Figure 2 (waterfall) | `experiments/gen_figures.py` |
@@ -180,13 +191,12 @@ attribution.
 
 ```bibtex
 @article{vanrijen2026fulltext,
-    title   = {Beyond abstracts: diagnosing full-text effects in
+    title   = {Beyond the abstract: diagnosing full-text effects in
                biomedical screening},
-    author  = {van Rijen, Paul and Ruch, Patrick},
-    journal = {Database},
+    author  = {van Rijen, Paul and Knafou, Julien and Mottaz, Ana\"is and Gobeill, Julien and Gaillac, Esteban and Ruch, Patrick},
+    journal = {Journal of the American Medical Informatics Association},
     year    = {2026},
-    publisher = {Oxford University Press},
-    url     = {https://github.com/pvr-biocuration/fulltext-diagnostic}
+    url     = {https://github.com/pvrijen/fulltext-diagnostic}
 }
 ```
 

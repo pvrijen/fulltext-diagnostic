@@ -6,8 +6,9 @@
 
 This package implements the diagnostic protocol described in:
 
-    van Rijen, P. and Ruch, P. (2026). "Beyond abstracts: diagnosing full-text
-    effects in biomedical screening." Database (Oxford University Press).
+    van Rijen, P. et al. (2026). "Beyond the abstract: diagnosing full-text
+    effects in biomedical screening." Journal of the American Medical Informatics
+    Association (under review).
 
 The protocol decomposes the effect of full-text processing into a Training
 Effect (TE) and an Inference Effect (IE). When these cancel (TE < 0, IE > 0),

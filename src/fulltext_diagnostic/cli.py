@@ -197,7 +197,7 @@ def reset(output_dir: str, job_name: str) -> None:
 
 @main.command(name="run-job")
 @click.argument("job_type", type=click.Choice([
-    "split", "train_C", "train_P", "eval_C", "eval_P", "diagnose"]))
+    "split", "train_C", "train_P", "eval_C", "eval_P", "diagnose", "pfd"]))
 @click.option("--fold", default=0, type=int, help="Fold index")
 @click.option("--data", required=True, type=click.Path(exists=True),
               help="CSV dataset")

@@ -6,18 +6,16 @@ Uses cached C checkpoints and CF teacher logits from the warmstart experiment.
 Runs on cd011431 + cd012661 (fastest datasets with most tagged docs).
 
 Usage:
-  CUDA_VISIBLE_DEVICES=0 .venv/bin/python papers/hp_sensitivity_sweep.py --alphas 0.05,0.1 --gpu 0
+  CUDA_VISIBLE_DEVICES=0 python experiments/run_alpha_sweep.py --alphas 0.05,0.1,0.2,0.3,0.5,1.0
 """
 import argparse, gc, json, os, sys, time
 import numpy as np, torch
 from pathlib import Path
 from scipy.stats import wilcoxon
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 from belt_plus.bert_classifier_truncated import BertClassifierTruncated
-from run_rq2_unified import load_data, make_cv_splits, make_val_split, set_seeds, ENCODERS, timed_eval
+from _helpers import *
 
 MODEL = ENCODERS["biomedbert-abs"]
 DATASETS = ["cd011431", "cd012661"]
@@ -118,8 +116,8 @@ for ds in DATASETS:
         train_sub, val_sub = make_val_split(train_idx, labels, SEED, fold)
         c_ckpt = C_CKPT / ds / f"C_{ds}_s42_f{fold}.pt"
         if not c_ckpt.exists(): continue
-        from run_rq2_unified import HP_LR_C, HP_WD_C, HP_DR_C, HP_WARMUP, HP_GRADNORM, HP_TRUNC_BS
-        from run_pooling_chapter import PATIENCE_C
+        from _helpers import *
+        # (constants now in _helpers)
         c_bs = HP_TRUNC_BS // 2 if len([labels[i] for i in train_sub]) > 2000 else HP_TRUNC_BS
         c = BertClassifierTruncated(
             pretrained_model_name_or_path=MODEL, num_labels=1, device=device,

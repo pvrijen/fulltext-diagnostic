@@ -150,24 +150,6 @@ def transform_single_text_batch(
         sep_token_id=tokenizer.sep_token_id,
     )
 
-    # if input_ids_tensor.size(0) > 0:
-    #     print("🔍 [DEBUG] First few chunk tokens:")
-    #     for i in range(min(3, input_ids_tensor.size(0))):
-    #         print(f"  Chunk {i}:")
-    #         print("   IDs   :", input_ids_tensor[i, :10].tolist(), "...")
-    #         print("   Mask  :", attention_mask_tensor[i, :10].tolist(), "...")
-    #         print("   Decoded:", tokenizer.decode(input_ids_tensor[i], skip_special_tokens=False))
-
-# # ── DEBUG ──────────────────────────────────────────────────────────────
-#     if torch.is_grad_enabled():   # only fires in training
-#         # How many *real* tokens make it into each chunk?
-#         non_pad_per_chunk = attention_mask_tensor.sum(-1)        # (chunks,)
-#         print("[SPLIT] non-PAD tokens per chunk:", non_pad_per_chunk.tolist())
-
-#         # Double-check that chunks_mask matches those counts
-#         print("[SPLIT] chunks_mask:", chunks_mask.cpu().int().tolist())
-# # ───────────────────────────────────────────────────────────────────────
-
     return input_ids_tensor, attention_mask_tensor, chunks_mask
 
 

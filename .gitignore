@@ -1,14 +1,9 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-
-# Distribution / packaging
-.eggs/
+*.egg-info/
 dist/
 build/
-*.egg-info/
 *.egg
 
 # Virtual environments
@@ -21,13 +16,29 @@ env/
 .vscode/
 *.swp
 *.swo
+*~
+
+# Data & models (never commit)
+*.pt
+*.bin
+*.pkl
+*.npz
+*.h5
+*.ckpt
+*.csv
+data/
+
+# Experiment outputs
+results/
+output/
+checkpoints/
+cached_logits/
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Experiment outputs
-ft_diagnostic_output/
-results/
-*.npz
-*.pt
+# Environment variables
+.env
+.env.*

@@ -12,21 +12,19 @@ If IS-PFD ≈ +0.016 (reproduces Paper B) and CF-PFD ≈ +0.016 → PFD is REAL
 If IS-PFD ≈ +0.016 but CF-PFD ≈ 0 → PFD is MEMORISATION
 
 Usage:
-  CUDA_VISIBLE_DEVICES=0 .venv/bin/python papers/warmstart_pfd_crossfit.py
+  CUDA_VISIBLE_DEVICES=0 python experiments/run_crossfit.py
 """
 import gc, json, os, sys, time
 import numpy as np, torch
 from pathlib import Path
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 from belt_plus.bert_classifier_truncated import BertClassifierTruncated
 from belt_plus.bert_classifier_with_pooling import BertClassifierWithPooling
-from run_rq2_unified import (load_data, make_cv_splits, make_val_split, set_seeds,
+from _helpers import *
     ENCODERS, HP_LR_C, HP_WD_C, HP_DR_C, HP_WARMUP, HP_GRADNORM, HP_TRUNC_BS,
     timed_eval, HP_LR, HP_WD, HP_DR)
-from run_pooling_chapter import PATIENCE_C, PATIENCE_P, T_BS, T_ACCUM
+# (constants now in _helpers)
 from sklearn.model_selection import StratifiedKFold
 from scipy.stats import wilcoxon
 

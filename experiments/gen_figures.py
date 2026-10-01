@@ -43,14 +43,14 @@ fig, ax = plt.subplots(figsize=(4.5, 3.2))
 
 # Data
 labels = ['$C$\n(abstract)', 'Training\neffect', 'Inference\neffect', '$P$@100%\n(full text)']
-values = [0.703, -0.058, 0.074, 0.720]
-bottoms = [0, 0.703 - 0.058, 0.703 - 0.058, 0]  # waterfall bottoms
+values = [0.697, -0.051, 0.074, 0.720]
+bottoms = [0, 0.697 - 0.051, 0.697 - 0.051, 0]  # waterfall bottoms
 # C bar: full from 0; TE: hangs from C; IE: hangs from P@0%; P@100%: full from 0
-bottoms = [0, 0.645, 0.645, 0]
-heights = [0.703, -0.058, 0.074, 0.720]
+bottoms = [0, 0.646, 0.646, 0]
+heights = [0.697, -0.051, 0.074, 0.720]
 # Actually let's do proper waterfall
-bar_bottoms = [0, 0.703, 0.645, 0]
-bar_heights = [0.703, -0.058, 0.074, 0.720]
+bar_bottoms = [0, 0.697, 0.646, 0]
+bar_heights = [0.697, -0.051, 0.074, 0.720]
 
 colors = [COL_GREY, COL_TE, COL_IE, COL_GREY]
 hatches = ['', '///', '', '']  # diagonal hatching on TE bar
@@ -62,12 +62,12 @@ for bar, h in zip(bars, hatches):
     bar.set_hatch(h)
 
 # Bootstrap 95% CI whiskers on TE and IE bars
-# TE: CI [-0.096, -0.024] → bar tip at 0.645, whiskers at 0.703+(-0.096)=0.607 and 0.703+(-0.024)=0.679
-# IE: CI [+0.042, +0.111] → bar tip at 0.719, whiskers at 0.645+0.042=0.687 and 0.645+0.111=0.756
-te_tip = 0.703 + (-0.058)  # 0.645
-ie_tip = 0.645 + 0.074     # 0.719
-te_ci_lo, te_ci_hi = 0.703 + (-0.096), 0.703 + (-0.024)  # 0.607, 0.679
-ie_ci_lo, ie_ci_hi = 0.645 + 0.042, 0.645 + 0.111        # 0.687, 0.756
+# TE: CI [-0.090, -0.016] → bar tip at 0.646, whiskers at 0.697+(-0.090)=0.607 and 0.697+(-0.016)=0.681
+# IE: CI [+0.041, +0.111] → bar tip at 0.720, whiskers at 0.646+0.041=0.687 and 0.646+0.111=0.757
+te_tip = 0.697 + (-0.051)  # 0.646
+ie_tip = 0.646 + 0.074     # 0.720
+te_ci_lo, te_ci_hi = 0.697 + (-0.090), 0.697 + (-0.016)  # 0.607, 0.681
+ie_ci_lo, ie_ci_hi = 0.646 + 0.041, 0.646 + 0.111        # 0.687, 0.757
 
 ax.errorbar(1, te_tip, yerr=[[te_tip - te_ci_lo], [te_ci_hi - te_tip]],
             fmt='none', ecolor='#333333', capsize=3, capthick=1.0, elinewidth=1.0, zorder=5)
@@ -75,21 +75,21 @@ ax.errorbar(2, ie_tip, yerr=[[ie_tip - ie_ci_lo], [ie_ci_hi - ie_tip]],
             fmt='none', ecolor='#333333', capsize=3, capthick=1.0, elinewidth=1.0, zorder=5)
 
 # Connector lines
-ax.plot([0.3, 1.3], [0.703, 0.703], '--', color='#666666', linewidth=0.8, zorder=2)
-ax.plot([1.3, 2.3], [0.645, 0.645], '--', color='#666666', linewidth=0.8, zorder=2)
+ax.plot([0.3, 1.3], [0.697, 0.697], '--', color='#666666', linewidth=0.8, zorder=2)
+ax.plot([1.3, 2.3], [0.646, 0.646], '--', color='#666666', linewidth=0.8, zorder=2)
 
 # Value labels
-ax.text(0, 0.703 + 0.004, '0.703', ha='center', va='bottom', fontsize=9, fontweight='bold')
-ax.text(1, 0.703 - 0.029, '$-$0.058', ha='center', va='center', fontsize=8,
+ax.text(0, 0.697 + 0.004, '0.697', ha='center', va='bottom', fontsize=9, fontweight='bold')
+ax.text(1, 0.697 - 0.026, '$-$0.051', ha='center', va='center', fontsize=8,
         fontweight='bold', color='white')
-ax.text(2, 0.645 + 0.037, '+0.074', ha='center', va='center', fontsize=8,
+ax.text(2, 0.646 + 0.037, '+0.074', ha='center', va='center', fontsize=8,
         fontweight='bold', color='white')
 ax.text(3, 0.720 + 0.004, '0.720', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
 # Total annotation
 ax.annotate('', xy=(3, 0.738), xytext=(0, 0.738),
             arrowprops=dict(arrowstyle='<->', color='#555555', lw=1.2))
-ax.text(1.5, 0.742, 'Total +0.017, n.s.', ha='center', fontsize=8, color='#555555')
+ax.text(1.5, 0.742, 'Total +0.023, n.s.', ha='center', fontsize=8, color='#555555')
 
 ax.set_xticks(range(4))
 ax.set_xticklabels(labels, fontsize=8)
@@ -221,7 +221,7 @@ for i, (v, bar) in enumerate(zip(sils, bars)):
 
 # Top annotation with matching colors
 fig.text(0.38, 0.93,
-         'a → b: Training effect (TE = $-$0.058, large shift)   |   b ≈ c: IE through classifier head, not CLS',
+         'a → b: Training effect (TE = $-$0.051, large shift)   |   b ≈ c: IE through classifier head, not CLS',
          ha='center', fontsize=6.5, color='#555555', fontweight='bold')
 
 plt.savefig(f'{OUT}/umap_4panel.pdf', dpi=300, bbox_inches='tight')

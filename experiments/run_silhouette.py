@@ -9,14 +9,12 @@ import numpy as np, torch
 from pathlib import Path
 from sklearn.metrics import silhouette_score
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 
 from belt_plus.bert_classifier_truncated import BertClassifierTruncated
 from belt_plus.bert_classifier_with_pooling import BertClassifierWithPooling
-from run_rq2_unified import (load_data, make_cv_splits, make_val_split, set_seeds, ENCODERS,
+from _helpers import *
     HP_LR_C, HP_WD_C, HP_DR_C, HP_WARMUP, HP_GRADNORM, HP_TRUNC_BS, HP_LR, HP_WD, HP_DR)
-from run_pooling_chapter import PATIENCE_C, T_BS, T_ACCUM
+# (constants now in _helpers)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--gpu", type=int, required=True)

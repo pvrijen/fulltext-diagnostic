@@ -49,8 +49,9 @@ def pfd_loss(
     hard_labels : Tensor
         Ground-truth binary labels.
     alpha : float
-        Weight for the hard-label loss. The soft loss receives weight
-        ``(1 - alpha) * temperature**2``.
+        Weight for the soft-label (distillation) loss. The hard-label loss
+        receives weight ``(1 - alpha)``; the soft loss receives
+        ``alpha * temperature**2``.
     temperature : float
         Temperature for softening probability distributions.
 

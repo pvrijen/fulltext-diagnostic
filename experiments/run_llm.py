@@ -2,19 +2,16 @@
 """Few-shot LLM screening with multiple SOTA models.
 
 Usage (one model per GPU):
-  CUDA_VISIBLE_DEVICES=0 .venv/bin/python papers/fewshot_llm_multi.py --model llama70b
-  CUDA_VISIBLE_DEVICES=1 .venv/bin/python papers/fewshot_llm_multi.py --model qwen72b
-  CUDA_VISIBLE_DEVICES=2 .venv/bin/python papers/fewshot_llm_multi.py --model gemma27b
+  CUDA_VISIBLE_DEVICES=0 python experiments/run_llm.py --model qwen2.5-32b --mode zeroshot,fewshot
+  CUDA_VISIBLE_DEVICES=1 python experiments/run_llm.py --model mistral-7b --mode fewshot
 """
 import json, os, sys, random, time, argparse
 import numpy as np, torch
 from pathlib import Path
 from sklearn.metrics import average_precision_score
 
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from run_rq2_unified import load_data, make_cv_splits, set_seeds
+from _helpers import *
 
 MODELS = {
     "llama70b": "meta-llama/Llama-3.1-70B-Instruct",
