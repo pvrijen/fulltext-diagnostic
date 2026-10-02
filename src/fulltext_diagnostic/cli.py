@@ -44,7 +44,7 @@ def main() -> None:
 @click.option("--data", required=True, type=click.Path(exists=True),
               help="CSV with columns: id, text_abstract, text_fulltext, label")
 @click.option("--encoder",
-              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
+              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
               help="HuggingFace model name or path")
 @click.option("--output-dir", default="ft_diagnostic_output",
               help="Directory for all pipeline outputs")
@@ -86,7 +86,7 @@ def diagnose(results_dir: str, output: str) -> None:
 @click.option("--data", required=True, type=click.Path(exists=True),
               help="CSV dataset (same as used for training)")
 @click.option("--encoder",
-              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
+              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
               help="HuggingFace model name or path")
 @click.option("--alpha", default=0.1, type=float,
               help="Hard-label weight in PFD loss (0=all soft, 1=all hard)")
@@ -144,7 +144,7 @@ def dag(output_dir: str, folds: int) -> None:
 @click.option("--output-dir", required=True, type=click.Path(),
               help="Pipeline output directory")
 @click.option("--encoder",
-              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
+              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
               help="HuggingFace model name or path")
 @click.option("--folds", default=5, type=int, help="Number of folds")
 @click.option("--partition", default="gpu", help="SLURM partition for GPU jobs")
@@ -204,7 +204,7 @@ def reset(output_dir: str, job_name: str) -> None:
 @click.option("--output-dir", required=True, type=click.Path(),
               help="Pipeline output directory")
 @click.option("--encoder",
-              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
+              default="microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
               help="HuggingFace model name or path")
 @click.option("--max-length", default=512, type=int)
 @click.option("--epochs", default=10, type=int)

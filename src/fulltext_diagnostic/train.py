@@ -9,13 +9,16 @@ independently or orchestrated by the sequential ``run_training`` driver.
 Jobs are resumable: if a job's done marker exists, it is skipped.
 
 The two models trained are:
-  - **C** (abstract baseline): trained and evaluated on abstracts only.
-  - **P** (full-text model): trained on full-text, evaluated on abstracts
-    (P@0%) and on full-text (P@100%). Teacher logits for PFD are also
-    extracted during evaluation.
+  - **C** (abstract baseline): BertClassifierTruncated, trained and evaluated
+    on abstracts only (max 512 tokens).
+  - **P** (full-text model): BertClassifierWithPooling, trained on full-text
+    with chunk-mean pooling (up to 12 chunks of 510 tokens), evaluated on
+    abstracts (L_ft→abs) and on full-text (L_ft→ft). Teacher logits for PFD
+    are also extracted during evaluation.
 """
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +31,13 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from rich.console import Console
+
+# Add belt_plus to path (sibling directory in repo)
+_repo_root = Path(__file__).resolve().parents[3]
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+from belt_plus.bert_classifier_truncated import BertClassifierTruncated
+from belt_plus.bert_classifier_with_pooling import BertClassifierWithPooling
 
 from .pipeline import build_dag, load_state, mark_done, run_guarded, show_status
 
@@ -150,6 +160,26 @@ def _get_preds(
     return logits, probs, np.array(all_labels)
 
 
+def _eval_prauc_belt(model, texts, labels):
+    """Compute PR-AUC using a belt_plus model's predict_scores."""
+    with torch.no_grad():
+        scores = model.predict_scores(texts)
+    if isinstance(scores, torch.Tensor):
+        scores = scores.cpu().float().numpy().flatten()
+    return float(average_precision_score(labels, scores))
+
+
+def _get_preds_belt(model, texts):
+    """Extract logits and probabilities from a belt_plus model."""
+    with torch.no_grad():
+        scores = model.predict_scores(texts)
+    if isinstance(scores, torch.Tensor):
+        scores = scores.cpu().float().numpy().flatten()
+    probs = np.array(scores)
+    logits = np.log(probs / (1 - np.clip(probs, 1e-7, 1 - 1e-7)))
+    return logits, probs
+
+
 def load_folds(output_dir: Path) -> dict[int, dict]:
     """Load the fold-index mapping saved by ``job_split_folds``."""
     with open(output_dir / "folds.json") as f:
@@ -223,30 +253,43 @@ def job_train_P(
     fold: int, data_path: Path, output_dir: Path, encoder: str,
     max_length: int, epochs: int, batch_size: int, lr: float, device: str,
 ) -> None:
-    """Train the full-text model P for one fold."""
+    """Train the full-text model P for one fold.
+
+    Uses BertClassifierWithPooling with chunk-mean pooling (up to 12
+    non-overlapping chunks of 510 content tokens), matching the paper's
+    decomposition protocol (Section 3.3).
+    """
     def _run() -> None:
         fi = load_folds(output_dir)[fold]
         df = pd.read_csv(data_path)
         texts = df["text_fulltext"].fillna("").tolist()
         labels = df["label"].values
-        ft_max = max_length * 2
-        tok = AutoTokenizer.from_pretrained(encoder)
-        model = AutoModelForSequenceClassification.from_pretrained(
-            encoder, num_labels=1
-        ).to(device)
-        tl = _make_loader(
-            [texts[i] for i in fi["train"]], labels[fi["train"]],
-            tok, ft_max, batch_size, True,
-        )
-        vl = _make_loader(
-            [texts[i] for i in fi["val"]], labels[fi["val"]],
-            tok, ft_max, batch_size,
-        )
-        model, vs = _train_loop(model, tl, vl, epochs, lr, device)
+        X_tr = [texts[i] for i in fi["train"]]
+        y_tr = labels[fi["train"]].tolist()
+        X_vl = [texts[i] for i in fi["val"]]
+        y_vl = labels[fi["val"]].tolist()
+
+        model = BertClassifierWithPooling(
+            pretrained_model_name_or_path=encoder, num_labels=1, device=device,
+            learning_rate=lr, weight_decay=0.01, dropout_rate=0.1,
+            batch_size=8, accumulation_steps=8, epochs=epochs,
+            chunk_size=510, stride=510, minimal_chunk_length=50, max_chunks=12,
+            chunk_pooling_strategy="mean", use_amp=False,
+            warmup_ratio=0.05, max_grad_norm=1.0)
+        model.fit(X_tr, y_tr, X_vl, y_vl, patience=3, early_stopping=True)
+
         md = output_dir / f"models/P_f{fold}"
         md.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained(md)
-        tok.save_pretrained(md)
+        nn = model.neural_network
+        if hasattr(nn, "module"):
+            nn = nn.module
+        torch.save(nn.encoder.state_dict(), md / "encoder.pt")
+        # Save full model config for reloading
+        json.dump({"encoder": encoder, "chunk_size": 510, "stride": 510,
+                    "max_chunks": 12, "pooling": "mean"},
+                   open(md / "config.json", "w"), indent=2)
+
+        vs = _eval_prauc_belt(model, X_vl, y_vl)
         console.print(f"  train_P_f{fold}: val={vs:.3f}")
         del model
         torch.cuda.empty_cache()
@@ -289,38 +332,48 @@ def job_eval_P(
     fold: int, data_path: Path, output_dir: Path,
     max_length: int, batch_size: int, device: str,
 ) -> None:
-    """Evaluate model P at 0% and 100% coverage and cache teacher logits."""
+    """Evaluate model P on abstracts (L_ft→abs) and full text (L_ft→ft).
+
+    Also caches teacher logits on training data for PFD.
+    Uses BertClassifierWithPooling with chunk-mean pooling.
+    """
     def _run() -> None:
         fi = load_folds(output_dir)[fold]
         df = pd.read_csv(data_path)
         abstracts = df["text_abstract"].fillna("").tolist()
         fulltexts = df["text_fulltext"].fillna("").tolist()
         labels = df["label"].values
-        ft_max = max_length * 2
+
         md = output_dir / f"models/P_f{fold}"
-        tok = AutoTokenizer.from_pretrained(md)
-        model = AutoModelForSequenceClassification.from_pretrained(md).to(device)
-        # P@0%
-        tl_abs = _make_loader(
-            [abstracts[i] for i in fi["test"]], labels[fi["test"]],
-            tok, max_length, batch_size,
-        )
-        p0_l, p0_p, p0_y = _get_preds(model, tl_abs, device)
-        p0 = average_precision_score(p0_y, p0_p)
-        # P@100%
-        tl_ft = _make_loader(
-            [fulltexts[i] for i in fi["test"]], labels[fi["test"]],
-            tok, ft_max, batch_size,
-        )
-        p100_l, p100_p, p100_y = _get_preds(model, tl_ft, device)
-        p100 = average_precision_score(p100_y, p100_p)
-        # Teacher logits on training data (for PFD)
-        tl_teach = _make_loader(
-            [fulltexts[i] for i in fi["train_all"]],
-            labels[fi["train_all"]],
-            tok, ft_max, batch_size,
-        )
-        teach_l, teach_p, _ = _get_preds(model, tl_teach, device)
+        cfg = json.load(open(md / "config.json"))
+
+        # Rebuild pooled model and load saved encoder weights
+        model = BertClassifierWithPooling(
+            pretrained_model_name_or_path=cfg["encoder"], num_labels=1,
+            device=device, learning_rate=1e-5, weight_decay=0.01,
+            dropout_rate=0.1, batch_size=8, accumulation_steps=8, epochs=1,
+            chunk_size=cfg["chunk_size"], stride=cfg["stride"],
+            minimal_chunk_length=50, max_chunks=cfg["max_chunks"],
+            chunk_pooling_strategy=cfg["pooling"], use_amp=False)
+        model.neural_network.encoder.load_state_dict(
+            torch.load(str(md / "encoder.pt"), map_location=device,
+                        weights_only=True), strict=False)
+
+        # Evaluate on abstracts (L_ft→abs)
+        X_te_abs = [abstracts[i] for i in fi["test"]]
+        y_te = labels[fi["test"]].tolist()
+        p0_l, p0_p = _get_preds_belt(model, X_te_abs)
+        p0 = average_precision_score(y_te, p0_p)
+
+        # Evaluate on full text (L_ft→ft)
+        X_te_ft = [fulltexts[i] for i in fi["test"]]
+        p100_l, p100_p = _get_preds_belt(model, X_te_ft)
+        p100 = average_precision_score(y_te, p100_p)
+
+        # Teacher logits on training full text (for PFD)
+        X_tr_ft = [fulltexts[i] for i in fi["train_all"]]
+        teach_l, teach_p = _get_preds_belt(model, X_tr_ft)
+
         cache = output_dir / "cache"
         cache.mkdir(exist_ok=True)
         np.savez(
@@ -330,9 +383,11 @@ def job_eval_P(
             teacher_logits=teach_l, teacher_probs=teach_p,
             test_idx=np.array(fi["test"]),
             train_all_idx=np.array(fi["train_all"]),
-            labels=p100_y,
+            labels=np.array(y_te),
         )
-        console.print(f"  eval_P_f{fold}: P@0%={p0:.3f} P@100%={p100:.3f}")
+        console.print(
+            f"  eval_P_f{fold}: L_ft→abs={p0:.3f} L_ft→ft={p100:.3f}"
+        )
         del model
         torch.cuda.empty_cache()
     run_guarded(output_dir, f"eval_P_f{fold}", _run)
@@ -351,7 +406,7 @@ def job_diagnose(output_dir: Path, n_folds: int) -> None:
             p0v = float(p["p0_prauc"])
             p100v = float(p["p100_prauc"])
             rows.append({
-                "fold": f, "C": cv, "P@0%": p0v, "P@100%": p100v,
+                "fold": f, "L_abs": cv, "L_fta": p0v, "L_ff": p100v,
                 "TE": p0v - cv, "IE": p100v - p0v, "Total": p100v - cv,
             })
         pd.DataFrame(rows).to_csv(
@@ -393,11 +448,11 @@ def run_training(
     seed : int
         Random seed.
     max_length : int
-        Max token length for abstract models.
+        Max token length for the abstract model (C). Default 512.
     n_chunks : int
-        Max chunks for the full-text model (reserved for future use).
+        Max chunks for the full-text model (P). Default 12.
     chunk_size : int
-        Tokens per chunk (reserved for future use).
+        Content tokens per chunk for the full-text model. Default 510.
     epochs : int
         Maximum training epochs.
     batch_size : int
