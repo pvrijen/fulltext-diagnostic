@@ -1,8 +1,6 @@
 # Reproducing the paper's experiments
 
-Scripts in this directory reproduce the core results of:
-
-> van Rijen P, Knafou J, Mottaz A, Gobeill J, Gaillac E, Ruch P. Beyond the abstract: diagnosing full-text effects in biomedical screening. *JAMIA*. 2026 (under review).
+Scripts in this directory reproduce the core results of the accompanying manuscript (under review).
 
 They are standalone: they depend only on this package (`belt_plus/`) and on `_helpers.py`, which holds every hyperparameter from the paper's hyperparameter table.
 

@@ -8,9 +8,7 @@
 
 **Diagnose whether full-text processing helps biomedical literature screening, and transfer full-text knowledge to an abstract-only model via Privileged Features Distillation (PFD).**
 
-Companion code for:
-
-> van Rijen P, Knafou J, Mottaz A, Gobeill J, Gaillac E, Ruch P. Beyond the abstract: diagnosing full-text effects in biomedical screening. *Journal of the American Medical Informatics Association*. 2026 (under review).
+Companion code for a manuscript on full-text effects in biomedical screening, currently under review. The citation and preprint link will be added once available.
 
 ## Installation
 
@@ -152,15 +150,7 @@ Full texts were retrieved from PubMed Central (open access subset) by PMID and c
 
 ## Citation
 
-```bibtex
-@article{vanrijen2026fulltext,
-  title   = {Beyond the abstract: diagnosing full-text effects in biomedical screening},
-  author  = {van Rijen, Paul and Knafou, Julien and Mottaz, Ana\"{i}s and Gobeill, Julien and Gaillac, Esteban and Ruch, Patrick},
-  journal = {Journal of the American Medical Informatics Association},
-  year    = {2026},
-  note    = {Under review. Code: \url{https://github.com/pvrijen/fulltext-diagnostic}}
-}
-```
+The manuscript is under review. A citation and preprint link will be added here once available.
 
 ## License
 
