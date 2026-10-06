@@ -10,7 +10,9 @@ The decomposition splits the total effect of full-text processing into:
   - Total = TE + IE
 
 Statistical significance is assessed via the Wilcoxon signed-rank test on
-fold-level paired differences.
+fold-level paired differences. With fewer than six folds the two-sided
+exact test cannot reach P < .05, so no P value is reported; the paper's P
+values pool folds across six datasets (n = 30).
 """
 
 import json
@@ -26,13 +28,33 @@ from rich.table import Table
 console = Console()
 
 
+MIN_N_FOR_TEST = 6
+
+
 def _safe_wilcoxon(x: np.ndarray) -> float:
-    """Wilcoxon signed-rank test, returning p=1.0 if the test is inapplicable."""
+    """Two-sided Wilcoxon signed-rank test.
+
+    Returns NaN when the test is not meaningful: fewer than
+    ``MIN_N_FOR_TEST`` observations, or all differences zero.
+    """
+    x = np.asarray(x, dtype=float)
+    if len(x) < MIN_N_FOR_TEST or np.all(x == 0):
+        return float("nan")
     try:
         _, p = wilcoxon(x, alternative="two-sided")
         return float(p)
     except ValueError:
-        return 1.0
+        return float("nan")
+
+
+def _fmt_p(p: float, n: int) -> str:
+    if np.isnan(p):
+        return f"n/a (n={n}<{MIN_N_FOR_TEST})" if n < MIN_N_FOR_TEST else "n/a"
+    return f"{p:.4f}"
+
+
+def _json_p(p: float):
+    return None if np.isnan(p) else float(p)
 
 
 def run_diagnosis(results_dir: Path, output_path: Optional[str] = None) -> None:
@@ -96,17 +118,17 @@ def run_diagnosis(results_dir: Path, output_path: Optional[str] = None) -> None:
                   "", "Full-text model on full-text")
     table.add_row("", "", "", "")
     table.add_row(
-        "Training Effect (TE)", f"{te_mean:+.3f}", f"{te_p:.4f}",
+        "Training Effect (TE)", f"{te_mean:+.3f}", _fmt_p(te_p, n),
         "Negative = FT training hurts" if te_mean < 0
         else "Positive = FT training helps",
     )
     table.add_row(
-        "Inference Effect (IE)", f"{ie_mean:+.3f}", f"{ie_p:.4f}",
+        "Inference Effect (IE)", f"{ie_mean:+.3f}", _fmt_p(ie_p, n),
         "Positive = body text adds signal" if ie_mean > 0
         else "Negative = body text hurts",
     )
     table.add_row(
-        "Total Effect", f"{total_mean:+.3f}", f"{total_p:.4f}",
+        "Total Effect", f"{total_mean:+.3f}", _fmt_p(total_p, n),
         "Net benefit of full-text processing",
     )
     table.add_row("", "", "", "")
@@ -114,6 +136,11 @@ def run_diagnosis(results_dir: Path, output_path: Optional[str] = None) -> None:
                   "Higher = more training disruption")
 
     console.print(table)
+    if n < MIN_N_FOR_TEST:
+        console.print(
+            f"[dim]P values need at least {MIN_N_FOR_TEST} paired folds; "
+            f"pool folds across datasets for inference.[/dim]"
+        )
 
     # Decision recommendation
     console.print("\n[bold]Recommendation[/bold]")
@@ -132,7 +159,7 @@ def run_diagnosis(results_dir: Path, output_path: Optional[str] = None) -> None:
         )
     elif ie_mean > 0 and te_mean >= 0:
         console.print(
-            "[green]Pattern: Both IE and TE are favourable.[/green]"
+            "[green]Pattern: Both IE and TE are favorable.[/green]"
         )
         console.print("Full-text processing helps at both training and inference.")
         console.print(
@@ -154,11 +181,12 @@ def run_diagnosis(results_dir: Path, output_path: Optional[str] = None) -> None:
         "C": {"mean": float(c_mean), "std": float(c_std)},
         "P@0%": {"mean": float(p0_mean), "std": float(p0_std)},
         "P@100%": {"mean": float(p100_mean), "std": float(p100_std)},
-        "TE": {"mean": float(te_mean), "p": float(te_p),
+        "TE": {"mean": float(te_mean), "p": _json_p(te_p),
                "values": te_vals.tolist()},
-        "IE": {"mean": float(ie_mean), "p": float(ie_p),
+        "IE": {"mean": float(ie_mean), "p": _json_p(ie_p),
                "values": ie_vals.tolist()},
-        "Total": {"mean": float(total_mean), "p": float(total_p)},
+        "Total": {"mean": float(total_mean), "p": _json_p(total_p),
+                  "values": total_vals.tolist()},
         "var_TE": te_var,
         "recommendation": (
             "pfd" if (ie_mean > 0 and te_mean < 0)

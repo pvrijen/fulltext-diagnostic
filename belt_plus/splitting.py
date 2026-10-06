@@ -3,20 +3,16 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/splitting.py
-
-"""Utilities to split long documents into overlapping fixed‑length chunks that are
+"""Utilities to split long documents into overlapping fixed-length chunks that are
 compatible with Transformer encoders.
 
-Key update ‑ 2025‑06‑19
------------------------
-* **Empty chunks are now formatted as `[CLS] [SEP] [PAD] …` instead of all‑`[PAD]`.**
+Empty chunks are formatted as `[CLS] [SEP] [PAD] ...` instead of all-`[PAD]`.
   This guarantees that every chunk sent to the encoder contains a valid sentence
-  boundary and therefore produces a stable, non‑zero embedding even when the
+  boundary and therefore produces a stable, non-zero embedding even when the
   chunk has no real content tokens.
 
-The change is implemented entirely inside `add_special_tokens_and_pad()`: all
-chunk slots—whether they correspond to real text or are just padding—receive a
+This is implemented inside `add_special_tokens_and_pad()`: all
+chunk slots, whether they correspond to real text or are just padding, receive a
 minimal valid sequence consisting of `[CLS]` and `[SEP]` followed by padding.
 """
 
@@ -28,22 +24,17 @@ import torch
 from torch import Tensor
 from transformers import BatchEncoding, PreTrainedTokenizerBase
 
-from belt_plus.exceptions import InconsistentSplittingParamsException
-from belt_plus.tensor_utils import (
-    split_overlapping,
-    check_split_parameters_consistency,
-)
 
 
 
 
 # -----------------------------------------------------------------------------
-# Helper: detect whether a chunk has *any* real (non‑special) tokens
+# Helper: detect whether a chunk has *any* real (non-special) tokens
 # -----------------------------------------------------------------------------
 
 def get_valid_chunks_mask(input_ids: torch.Tensor, special_token_ids: List[int]) -> torch.Tensor:
     """Return a boolean mask of shape *(chunks,)* where *True* means the chunk has
-    at least one non‑special token.
+    at least one non-special token.
     """
     special_token_ids_tensor = torch.tensor(
         [i for i in special_token_ids if i is not None], device=input_ids.device
@@ -66,7 +57,7 @@ def transform_list_of_texts(
     maximal_text_length: Optional[int] = None,
     max_chunks: int = 10,
 ) -> BatchEncoding:
-    """Tokenise, split and pad a *list* of texts so they can be stacked into a
+    """Tokenize, split and pad a *list* of texts so they can be stacked into a
     single tensor batch.  Returns the trio *(input_ids, attention_mask,
     chunks_mask)* wrapped into a `BatchEncoding`.
     """
@@ -117,13 +108,13 @@ def transform_single_text_batch(
     max_chunks: int,
     tokenizer: PreTrainedTokenizerBase,
 ) -> Tuple[Tensor, Tensor, Tensor]:
-    # Trim right‑hand padding so we only operate on real tokens
+    # Trim right-hand padding so we only operate on real tokens
     real_len = attention_mask.sum().item()
     real_tokens = input_ids[:real_len]
     real_mask   = attention_mask[:real_len]
 
 
-    # Fake batch‑dim required by the older helper
+    # Fake batch-dim required by the older helper
     tokens = {
         "input_ids": real_tokens.unsqueeze(0),
         "attention_mask": real_mask.unsqueeze(0),
@@ -217,7 +208,7 @@ def split_tokens_into_smaller_chunks_jointly(
     device = input_ids.device
     dtype  = input_ids.dtype
 
-    # Pre‑allocate
+    # Pre-allocate
     id_chunks   = torch.zeros((max_chunks, chunk_size), dtype=dtype, device=device)
     mask_chunks = torch.zeros((max_chunks, chunk_size), dtype=attention_mask.dtype, device=device)
     chunks_mask = torch.zeros(max_chunks, dtype=torch.bool, device=device)
@@ -248,7 +239,7 @@ def split_tokens_into_smaller_chunks_jointly(
     return id_chunks, mask_chunks, chunks_mask
 
 # -----------------------------------------------------------------------------
-# Tokenisation wrappers
+# Tokenization wrappers
 # -----------------------------------------------------------------------------
 
 def tokenize_whole_text(text: str, tokenizer: PreTrainedTokenizerBase) -> BatchEncoding:
@@ -273,7 +264,7 @@ def tokenize_text_with_truncation(
     )
 
 # -----------------------------------------------------------------------------
-# **Updated** pad‑and‑special‑token routine
+# Pad-and-special-token routine
 # -----------------------------------------------------------------------------
 
 def add_special_tokens_and_pad(
@@ -285,14 +276,14 @@ def add_special_tokens_and_pad(
     cls_token_id: int | None = 101,
     sep_token_id: int | None = 102,
 ) -> Tuple[Tensor, Tensor]:
-    """Convert raw token windows into fixed‑length model inputs.
+    """Convert raw token windows into fixed-length model inputs.
 
-    Every row ends up as `[CLS] + tokens[:N] + [SEP] + [PAD]*(chunk_size‑N‑2)`.
-    Even windows that have *zero* real tokens (all‑pad) still get `[CLS] [SEP]`
+    Every row ends up as `[CLS] + tokens[:N] + [SEP] + [PAD]*(chunk_size-N-2)`.
+    Even windows that have *zero* real tokens (all-pad) still get `[CLS] [SEP]`
     so that the encoder sees a valid sentence boundary.
     """
 
-    # Accept both list[Tensor] and pre‑stacked Tensor for convenience
+    # Accept both list[Tensor] and pre-stacked Tensor for convenience
     if isinstance(input_id_chunks, (list, tuple)):
         input_id_chunks = torch.stack(input_id_chunks)
         mask_chunks     = torch.stack(mask_chunks)
@@ -300,13 +291,12 @@ def add_special_tokens_and_pad(
     num_chunks = input_id_chunks.size(0)
     device     = input_id_chunks.device
     dtype_ids  = input_id_chunks.dtype
-    dtype_mask = mask_chunks.dtype
 
     pad_token_id = pad_token_id or 0
     cls_token_id = cls_token_id or 0
     sep_token_id = sep_token_id or 0
 
-    # Pre‑allocate output tensors full of PAD
+    # Pre-allocate output tensors full of PAD
     padded_ids   = torch.full((num_chunks, chunk_size), pad_token_id,
                               dtype=dtype_ids, device=device)
     # padded_masks = torch.zeros((num_chunks, chunk_size), dtype=dtype_mask, device=device)
@@ -324,7 +314,7 @@ def add_special_tokens_and_pad(
             # Explicitly clear ids to guarantee empty slice below
             ids = ids[:0]
 
-        # Cap to available space (‑2 for CLS+SEP)
+        # Cap to available space (-2 for CLS+SEP)
         content_len = min(content_len, chunk_size - 2)
 
         # [CLS]

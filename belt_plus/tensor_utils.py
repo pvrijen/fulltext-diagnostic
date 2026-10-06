@@ -3,7 +3,6 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/tensor_utils.py
 import torch
 from torch import equal, Tensor
 from belt_plus.exceptions import InconsistentSplittingParamsException

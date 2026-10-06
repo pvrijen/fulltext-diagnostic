@@ -3,7 +3,6 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/neural_networks/pooling_nn.py
 from __future__ import annotations
 
 from typing import Optional
@@ -15,6 +14,8 @@ from torch import nn, Tensor
 import torch.nn.functional as F
 
 from .base_nn import BaseNeuralNetwork
+
+logger = logging.getLogger(__name__)
 
 
 class _GradScale(torch.autograd.Function):
@@ -341,6 +342,17 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
     (e.g., meanmax), we project back to H with a small learnable projector.
     After that, a shared FeatureHead(H→H) is applied so that teacher/student
     tails are identical for feature-KD.
+
+    Environment variables (all off by default; none are used by the paper's
+    experiments or by the ``fulltext-diagnostic`` CLI):
+
+    - ``BELT_DEBUG=1``: log a forward-pass signature once.
+    - ``BELT_BODY_GRAD_MODE`` / ``BELT_BODY_GRAD_SCALE``: rescale gradients
+      flowing from body chunks (``fixed`` scale, default 1.0).
+    - ``BELT_ABSTRACT_ONLY_LOSS=1``: compute the loss from the first chunk only.
+    - ``BELT_ADAPTIVE_POOL=1``: enable adaptive chunk pooling.
+    - ``BELT_NUM_WORKERS`` and related ``BELT_*_WORKERS`` / ``BELT_PREFETCH_FACTOR``
+      (see ``belt_plus/bert.py``): DataLoader worker counts.
     """
 
     def __init__(
@@ -439,7 +451,6 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
             self.global_pos_encoding = "sin"
         # Number of evenly-spaced global tokens per chunk (first and last always included)
         self._global_tokens_per_chunk = max(2, int(global_tokens_per_chunk or 64))
-        max_global_tokens = max(1, self.max_chunks * self._global_tokens_per_chunk)
         max_position = max(1, (self.max_chunks - 1) * max(self.stride, 1) + self.chunk_size)
 
         self.chunk_self_attn_encoder = None  # overridden below for chunk_self_attn
@@ -612,7 +623,7 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
         # --- signature logging ---
         self._log_signature = bool(log_signature)
         if self._log_signature:
-            print("[PoolingNN:init] "
+            logger.info("[PoolingNN:init] "
                   f"token_pool={self.token_pooling_strategy} "
                   f"chunk_pool={self.chunk_pooling_strategy} "
                   f"max_chunks={self.max_chunks} "
@@ -644,11 +655,11 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
                 f" tokens_per_chunk={self._global_tokens_per_chunk}"
                 f" layers={num_layers} nhead={getattr(ct, 'nhead', '?')}"
             )
-        print(msg, flush=True)
+        logger.info(msg)
 
     def _debug_dump_forward(self, input_ids: Tensor, attention_mask: Tensor, chunks_mask: Optional[Tensor]):
         B, C, T = input_ids.shape
-        print(
+        logger.info(
             f"[PoolingNN:fwd] shapes: ids={tuple(input_ids.shape)} mask={tuple(attention_mask.shape)} "
             f"chunks_mask={tuple(chunks_mask.shape) if chunks_mask is not None else None} | "
             f"pool(tok)={self.token_pooling_strategy} pool(chunk)={self.chunk_pooling_strategy} "
@@ -664,7 +675,6 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
         chunks_mask: Optional[Tensor],
     ) -> None:
         try:
-            logger = logging.getLogger(__name__)
             if chunks_mask is not None:
                 mask_cpu = chunks_mask.detach().to(torch.bool).cpu()
                 B, C = mask_cpu.shape
@@ -810,11 +820,11 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
             masked = chunk_feats.masked_fill(cm < 0.5, neg_inf)
             max_pool, _ = masked.max(dim=1)  # [B,H]
             max_pool = torch.where(torch.isfinite(max_pool), max_pool, torch.zeros_like(max_pool))
-            return (mean_pool + max_pool) / 2  # [B, H] — parameter-free
+            return (mean_pool + max_pool) / 2  # [B, H], parameter-free
 
         if strat.startswith("residual_"):
             # Abstract-anchored: chunk_0 + pool(all_chunks)
-            chunk_0 = chunk_feats[:, 0, :]  # [B, H] — always the abstract chunk
+            chunk_0 = chunk_feats[:, 0, :]  # [B, H], always the abstract chunk
             sub = strat[len("residual_"):]  # mean, max, or meanmax
 
             if sub == "mean":
@@ -836,7 +846,7 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
             else:
                 raise ValueError(f"Unknown residual sub-strategy: {sub}")
 
-            return chunk_0 + pool  # [B, H] — parameter-free
+            return chunk_0 + pool  # [B, H], parameter-free
 
         if strat == "first":
             first_idx = torch.zeros(B, dtype=torch.long, device=chunk_feats.device)
@@ -930,7 +940,7 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
         # Skip padding chunks: use chunks_mask (set by the chunking layer)
         # rather than attention_mask.  "Empty" padding chunks still contain
         # [CLS] and [SEP] tokens (attention_mask > 0), so an attention_mask
-        # check would encode them — wasting compute and producing noisy
+        # check would encode them, wasting compute and producing noisy
         # gradients from near-empty sequences.  chunks_mask is False for
         # padding slots, correctly skipping them.
         chunks_mask_flat = chunks_mask.view(B * C)  # [B*C] bool
@@ -957,7 +967,7 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
             hidden = torch.zeros(B * C, T, H_enc, device=device, dtype=hidden_valid.dtype)
             hidden[valid_flat] = hidden_valid
         else:
-            # All chunks valid (or zero — unlikely), run the standard path
+            # All chunks valid (or zero, unlikely), run the standard path
             outputs = self.encoder(input_ids=ids_flat, attention_mask=am_flat)
             hidden = outputs.last_hidden_state  # [B*C, T, H]
             chunk_vecs = self._pool_tokens_per_chunk(hidden, am_flat, model_outputs=outputs)  # [B*C, H]
@@ -1041,7 +1051,6 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
                 doc_vecs_global = sum_doc / counts_safe.unsqueeze(-1)
                 fallback_mask = counts_doc <= 0
                 if not self._global_transform_debug_once:
-                    logger = logging.getLogger(__name__)
                     tokens_mean = float(counts_doc.mean().item())
                     tokens_min = int(counts_doc.min().item())
                     tokens_max = int(counts_doc.max().item())
@@ -1104,7 +1113,6 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
                     post_norms = chunk_vecs.detach().norm(dim=-1).to("cpu")
                     self._log_transform_stats(pre_norms, post_norms, chunks_mask)
                 if self.global_transform_mode == "global_only" and fallback_mask.any():
-                    logger = logging.getLogger(__name__)
                     logger.info(
                         "[GlobalTransform] global_only fallback on %d docs (using chunk mean)",
                         int(fallback_mask.sum().item()),
@@ -1143,7 +1151,7 @@ class PoolingNeuralNetwork(BaseNeuralNetwork):
 
         # --- Abstract-only training loss (optional) ---
         # When enabled, pool only the first (abstract) chunk during training
-        # so the encoder is optimised purely for abstract reading.  At
+        # so the encoder is optimized purely for abstract reading.  At
         # inference, pool all chunks so body text contributes information.
         # Controlled via BELT_ABSTRACT_ONLY_LOSS=1 environment variable.
         if (self.training and not self.first_chunk_only

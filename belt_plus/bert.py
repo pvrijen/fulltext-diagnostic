@@ -3,8 +3,6 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/bert.py
-
 from __future__ import annotations
 from abc import ABC, abstractmethod
 import json
@@ -15,18 +13,15 @@ import inspect
 import os
 
 import torch
-from time import time
 from torch import Tensor, nn
-from torch.nn import CrossEntropyLoss, MSELoss, DataParallel
+from torch.nn import DataParallel
 from torch.optim import AdamW, Optimizer
 from transformers import get_linear_schedule_with_warmup
-from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler, WeightedRandomSampler
-from transformers import AutoTokenizer, PreTrainedTokenizerBase, AutoModel
+from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
+from transformers import AutoTokenizer, AutoModel
 from .neural_networks.pooling_nn import PoolingNeuralNetwork
 import numpy as np
-import torch.nn.functional as F
 import random
-from collections import Counter
 from transformers import logging as transformers_logging
 
 from belt_plus.section_aware import register_tag_tokens
@@ -87,7 +82,7 @@ class BertBase(ABC):
         max_grad_norm: float = 1.0,
         neural_network: Optional[nn.Module] = None,
         pretrained_model_name_or_path: Optional[str] = "bert-base-uncased",
-        device: str = "cuda:0",
+        device: str = "cuda",
         many_gpus: bool = False,
         use_amp: bool = False,
         amp_dtype: Optional[Union[str, torch.dtype]] = "auto",
@@ -182,7 +177,7 @@ class BertBase(ABC):
         try:
             tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=True)
         except Exception as e:
-            print(f"[Tokenizer Warning] Falling back to slow tokenizer for {pretrained_model_name_or_path}: {e}")
+            logger.info(f"[Tokenizer Warning] Falling back to slow tokenizer for {pretrained_model_name_or_path}: {e}")
             tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, use_fast=False)
         self.tokenizer = tokenizer
 
@@ -499,7 +494,7 @@ class BertBase(ABC):
             epoch_loss += loss.item()
 
             if ((step + 1) % 100 == 0) or (step + 1 == len(dataloader)):
-                print(f"[Train] Epoch {self.current_epoch} | Step {step + 1}/{len(dataloader)} | Loss: {loss.item():.5f}")
+                logger.info(f"[Train] Epoch {self.current_epoch} | Step {step + 1}/{len(dataloader)} | Loss: {loss.item():.5f}")
 
             if ((step + 1) % self.accumulation_steps == 0) or (step + 1 == len(dataloader)):
                 if self.use_amp and scaler is not None:
@@ -698,7 +693,7 @@ class BertBase(ABC):
             torch.save(self.scheduler.state_dict(), model_dir / "scheduler.pth")
 
     @classmethod
-    def load(cls, model_dir: str, device: str = "cuda:0", many_gpus: bool = False) -> "BertBase":
+    def load(cls, model_dir: str, device: str = "cuda", many_gpus: bool = False) -> "BertBase":
         model_dir = Path(model_dir)
         if not model_dir.exists():
             raise FileNotFoundError(f"Model directory {model_dir} does not exist.")
@@ -780,7 +775,7 @@ class BertBase(ABC):
             try:
                 model._params["scheduler_state_dict"] = torch.load(sched_path, map_location=device)
             except Exception as e:
-                print(f"[load] Warning: could not restore scheduler state: {e}")
+                logger.info(f"[load] Warning: could not restore scheduler state: {e}")
 
         return model
 

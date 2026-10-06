@@ -31,7 +31,7 @@ from rich.text import Text
 
 from .pipeline import (
     STEP_LABELS, State, build_dag, generate_slurm_scripts,
-    get_runnable, get_summary, job_done, job_failed, load_state, reset_job,
+    get_runnable, get_summary, load_state, reset_job,
 )
 
 

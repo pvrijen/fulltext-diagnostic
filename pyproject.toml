@@ -11,7 +11,14 @@ license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
     {name = "Paul van Rijen", email = "paul.vanrijen@hesge.ch"},
+    {name = "Julien Knafou"},
+    {name = "Anaïs Mottaz"},
+    {name = "Julien Gobeill"},
+    {name = "Esteban Gaillac"},
     {name = "Patrick Ruch", email = "patrick.ruch@hesge.ch"},
+]
+maintainers = [
+    {name = "Paul van Rijen", email = "paul.vanrijen@hesge.ch"},
 ]
 keywords = ["biocuration", "screening", "knowledge-distillation", "full-text", "NLP"]
 classifiers = [
@@ -20,6 +27,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
     "torch>=2.0",
@@ -34,7 +45,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff"]
+dev = ["pytest>=7", "ruff"]
+experiments = [
+    "umap-learn>=0.5",
+    "matplotlib>=3.7",
+    "bitsandbytes>=0.43",
+    "accelerate>=0.30",
+]
 
 [project.scripts]
 fulltext-diagnostic = "fulltext_diagnostic.cli:main"
@@ -42,8 +59,15 @@ ftd-monitor = "fulltext_diagnostic.tui:run"
 
 [project.urls]
 Homepage = "https://github.com/pvrijen/fulltext-diagnostic"
-Paper = "https://github.com/pvrijen/fulltext-diagnostic"
+Issues = "https://github.com/pvrijen/fulltext-diagnostic/issues"
 
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = ["fulltext_diagnostic*", "belt_plus*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82", "F401", "F841"]

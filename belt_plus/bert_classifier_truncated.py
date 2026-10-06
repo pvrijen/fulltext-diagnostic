@@ -3,7 +3,6 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/bert_classifier_truncated.py
 from __future__ import annotations
 
 from contextlib import nullcontext
@@ -17,6 +16,9 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from transformers import get_linear_schedule_with_warmup
 
 from belt_plus.bert_truncated import BertTruncated, TruncatedDataset
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BertClassifierTruncated(BertTruncated):
@@ -39,7 +41,7 @@ class BertClassifierTruncated(BertTruncated):
         neural_network: Optional[torch.nn.Module] = None,
         pretrained_model_name_or_path: Optional[str] = "bert-base-uncased",
         preloaded_state_dict: Optional[dict] = None,
-        device: str = "cuda:0",
+        device: str = "cuda",
         many_gpus: bool = False,
         dropout_rate: float = 0.3,
         use_amp: bool = False,
@@ -251,15 +253,15 @@ class BertClassifierTruncated(BertTruncated):
             if teacher_feature_head_state:
                 try:
                     self.neural_network.feature_head.load_state_dict(teacher_feature_head_state, strict=False)
-                    print("[KD] Loaded teacher feature_head into student.")
+                    logger.info("[KD] Loaded teacher feature_head into student.")
                 except Exception as e:
-                    print(f"[KD] warn: couldn't load teacher feature_head: {e}")
+                    logger.info(f"[KD] warn: couldn't load teacher feature_head: {e}")
             if teacher_classifier_state:
                 try:
                     self.neural_network.classifier.load_state_dict(teacher_classifier_state, strict=False)
-                    print("[KD] Loaded teacher classifier into student.")
+                    logger.info("[KD] Loaded teacher classifier into student.")
                 except Exception as e:
-                    print(f"[KD] warn: couldn't load teacher classifier: {e}")
+                    logger.info(f"[KD] warn: couldn't load teacher classifier: {e}")
 
         best_val_loss = float("inf")
         wait = 0
@@ -432,7 +434,7 @@ class BertClassifierTruncated(BertTruncated):
                 epoch_loss += loss.item()
 
                 if ((step + 1) % 100 == 0) or (step + 1 == len(train_loader)):
-                    print(f"[Train] Epoch {epoch} | Step {step + 1}/{len(train_loader)} | Loss: {loss.item():.5f}")
+                    logger.info(f"[Train] Epoch {epoch} | Step {step + 1}/{len(train_loader)} | Loss: {loss.item():.5f}")
 
             # === validation ===
             val_loss = None

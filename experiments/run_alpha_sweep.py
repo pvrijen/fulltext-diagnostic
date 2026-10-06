@@ -5,12 +5,14 @@ Sweep alpha in {0.05, 0.1, 0.2, 0.3, 0.5, 1.0} at epochs=3, T=4.0.
 Uses cached C checkpoints and CF teacher logits from the warmstart experiment.
 Runs on cd011431 + cd012661 (fastest datasets with most tagged docs).
 
-Usage:
-  CUDA_VISIBLE_DEVICES=0 python experiments/run_alpha_sweep.py --alphas 0.05,0.1,0.2,0.3,0.5,1.0
+Requires the C checkpoints and CF logits written by run_crossfit.py
+(under $FTD_OUT_DIR/crossfit/biomedbert-abs/).
+
+Usage (from the repository root):
+  python experiments/run_alpha_sweep.py --alphas 0.05,0.1,0.2,0.3,0.5,1.0 --gpu 0
 """
-import argparse, gc, json, os, sys, time
+import argparse, gc, json, time
 import numpy as np, torch
-from pathlib import Path
 from scipy.stats import wilcoxon
 
 
@@ -26,9 +28,10 @@ NUDGE_WD = 0.01
 NUDGE_DR = 0.1
 NUDGE_EPOCHS = 3
 
-C_CKPT = Path("papers/output_warmstart_pfd_crossfit/checkpoints")
-CF_LOGITS = Path("papers/output_warmstart_pfd_crossfit/cached_logits")
-OUT = Path("papers/output_hp_sensitivity")
+CROSSFIT = OUT_ROOT / "crossfit" / "biomedbert-abs"
+C_CKPT = CROSSFIT / "checkpoints"
+CF_LOGITS = CROSSFIT / "cached_logits"
+OUT = OUT_ROOT / "alpha_sweep"
 OUT.mkdir(parents=True, exist_ok=True)
 
 parser = argparse.ArgumentParser()
@@ -66,7 +69,7 @@ for ds in DATASETS:
         cf_path = CF_LOGITS / ds / f"CF5_{ds}_f{fold}.pt"
 
         if not c_ckpt.exists() or not cf_path.exists():
-            log(f"SKIP {ds}_f{fold} — missing checkpoints")
+            log(f"SKIP {ds}_f{fold}: missing checkpoints (run run_crossfit.py first)")
             continue
 
         cf_data = torch.load(str(cf_path), map_location='cpu', weights_only=True)
@@ -116,8 +119,6 @@ for ds in DATASETS:
         train_sub, val_sub = make_val_split(train_idx, labels, SEED, fold)
         c_ckpt = C_CKPT / ds / f"C_{ds}_s42_f{fold}.pt"
         if not c_ckpt.exists(): continue
-        from _helpers import *
-        # (constants now in _helpers)
         c_bs = HP_TRUNC_BS // 2 if len([labels[i] for i in train_sub]) > 2000 else HP_TRUNC_BS
         c = BertClassifierTruncated(
             pretrained_model_name_or_path=MODEL, num_labels=1, device=device,

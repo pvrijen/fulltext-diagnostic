@@ -3,7 +3,6 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/bert_classifier_with_pooling.py
 from __future__ import annotations
 
 from typing import Optional, List, Union
@@ -42,7 +41,7 @@ class BertClassifierWithPooling(BertWithPooling):
         neural_network: Optional[Module] = None,
         pretrained_model_name_or_path: Optional[str] = "bert-base-uncased",
         preloaded_state_dict: Optional[dict] = None,
-        device: str = "cuda:0",
+        device: str = "cuda",
         many_gpus: bool = False,
         use_chunk_transform: bool = False,
         chunk_transform_layers: int = 1,
@@ -117,9 +116,9 @@ class BertClassifierWithPooling(BertWithPooling):
             weight_decay=weight_decay,
             class_weights=class_weights,
             problem_type=problem_type,
-            token_pooling_strategy=token_pooling_strategy,  # ✅ forward
-            first_chunk_only=first_chunk_only,              # ✅ forward
-            normalize_chunks=normalize_chunks,              # ✅ forward
+            token_pooling_strategy=token_pooling_strategy,
+            first_chunk_only=first_chunk_only,
+            normalize_chunks=normalize_chunks,
             log_signature=log_signature,
             section_aware_tokenization=section_aware_tokenization,
             section_aware_chunking=section_aware_chunking,

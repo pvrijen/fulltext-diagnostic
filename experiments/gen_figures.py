@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Regenerate all Python figures with unified colorblind-safe palette.
+"""Generate the waterfall (decomposition) and UMAP figures.
+
+The waterfall reads $FTD_OUT_DIR/crossfit/biomedbert-abs/summary.json when
+present and falls back to the values reported in the paper otherwise. The
+UMAP figure needs $FTD_OUT_DIR/silhouette/umap_cache.npz from
+run_silhouette.py and is skipped if it is missing. Figures are written to
+$FTD_OUT_DIR/figures/.
+
+Palette (Tableau 10 based, colorblind safe):
 
 Palette (Tableau 10 based, colorblind safe):
   C (baseline):     #4E79A7  steel blue
@@ -8,10 +16,14 @@ Palette (Tableau 10 based, colorblind safe):
   C_PFD (solution): #59A14F  green
   TE (negative):    #F28E2B  orange (colorblind-safe)
   IE (positive):    #59A14F  green
-  Neutral grey:     #BAB0AC
+  Neutral gray:     #BAB0AC
   Positive class:   #E15759  red
-  Negative class:   #D3D3D3  light grey
+  Negative class:   #D3D3D3  light gray
 """
+import json
+import os
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -32,7 +44,40 @@ COL_GREY  = '#BAB0AC'  # neutral
 COL_POS   = '#E15759'  # positive class dots
 COL_NEG   = '#D3D3D3'  # negative class dots
 
-OUT = 'papers/paper_b_biocuration_guide/figures'
+OUT_ROOT = Path(os.environ.get("FTD_OUT_DIR", "output"))
+OUT = OUT_ROOT / "figures"
+OUT.mkdir(parents=True, exist_ok=True)
+
+
+def _bootstrap_ci(values, n_boot=10000, seed=42):
+    rng = np.random.default_rng(seed)
+    values = np.asarray(values, dtype=float)
+    means = [rng.choice(values, len(values), replace=True).mean() for _ in range(n_boot)]
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
+
+
+def load_decomposition():
+    """Mean C, TE, IE, P@100% and bootstrap CIs across dataset-folds."""
+    summary = OUT_ROOT / "crossfit" / "biomedbert-abs" / "summary.json"
+    if summary.exists():
+        rows = json.loads(summary.read_text())
+        te = [r["TE"] for r in rows]
+        ie = [r["IE"] for r in rows]
+        print(f"Decomposition from {summary} (n={len(rows)})")
+        return {
+            "C": float(np.mean([r["C"] for r in rows])),
+            "TE": float(np.mean(te)), "IE": float(np.mean(ie)),
+            "P100": float(np.mean([r["P@100%"] for r in rows])),
+            "TE_ci": _bootstrap_ci(te), "IE_ci": _bootstrap_ci(ie),
+            "total_sig": False,
+        }
+    print("No crossfit summary found; using the values reported in the paper.")
+    return {"C": 0.697, "TE": -0.051, "IE": 0.074, "P100": 0.720,
+            "TE_ci": (-0.090, -0.016), "IE_ci": (0.041, 0.111),
+            "total_sig": False}
+
+
+D = load_decomposition()
 
 # ============================================================
 # Figure 2: Waterfall decomposition
@@ -43,58 +88,57 @@ fig, ax = plt.subplots(figsize=(4.5, 3.2))
 
 # Data
 labels = ['$C$\n(abstract)', 'Training\neffect', 'Inference\neffect', '$P$@100%\n(full text)']
-values = [0.697, -0.051, 0.074, 0.720]
-bottoms = [0, 0.697 - 0.051, 0.697 - 0.051, 0]  # waterfall bottoms
-# C bar: full from 0; TE: hangs from C; IE: hangs from P@0%; P@100%: full from 0
-bottoms = [0, 0.646, 0.646, 0]
-heights = [0.697, -0.051, 0.074, 0.720]
-# Actually let's do proper waterfall
-bar_bottoms = [0, 0.697, 0.646, 0]
-bar_heights = [0.697, -0.051, 0.074, 0.720]
+c_val, te, ie, p100 = D["C"], D["TE"], D["IE"], D["P100"]
+p0 = c_val + te
+bar_bottoms = [0, c_val, p0, 0]
+bar_heights = [c_val, te, ie, p100]
 
 colors = [COL_GREY, COL_TE, COL_IE, COL_GREY]
 hatches = ['', '///', '', '']  # diagonal hatching on TE bar
 
 bars = ax.bar(range(4), bar_heights, bottom=bar_bottoms, color=colors,
               edgecolor='#333333', linewidth=0.6, width=0.6, zorder=3)
-# Apply hatching to TE bar (index 1)
 for bar, h in zip(bars, hatches):
     bar.set_hatch(h)
 
 # Bootstrap 95% CI whiskers on TE and IE bars
-# TE: CI [-0.090, -0.016] → bar tip at 0.646, whiskers at 0.697+(-0.090)=0.607 and 0.697+(-0.016)=0.681
-# IE: CI [+0.041, +0.111] → bar tip at 0.720, whiskers at 0.646+0.041=0.687 and 0.646+0.111=0.757
-te_tip = 0.697 + (-0.051)  # 0.646
-ie_tip = 0.646 + 0.074     # 0.720
-te_ci_lo, te_ci_hi = 0.697 + (-0.090), 0.697 + (-0.016)  # 0.607, 0.681
-ie_ci_lo, ie_ci_hi = 0.646 + 0.041, 0.646 + 0.111        # 0.687, 0.757
-
+te_tip, ie_tip = p0, p100
+te_ci_lo, te_ci_hi = c_val + D["TE_ci"][0], c_val + D["TE_ci"][1]
+ie_ci_lo, ie_ci_hi = p0 + D["IE_ci"][0], p0 + D["IE_ci"][1]
 ax.errorbar(1, te_tip, yerr=[[te_tip - te_ci_lo], [te_ci_hi - te_tip]],
             fmt='none', ecolor='#333333', capsize=3, capthick=1.0, elinewidth=1.0, zorder=5)
 ax.errorbar(2, ie_tip, yerr=[[ie_tip - ie_ci_lo], [ie_ci_hi - ie_tip]],
             fmt='none', ecolor='#333333', capsize=3, capthick=1.0, elinewidth=1.0, zorder=5)
 
 # Connector lines
-ax.plot([0.3, 1.3], [0.697, 0.697], '--', color='#666666', linewidth=0.8, zorder=2)
-ax.plot([1.3, 2.3], [0.646, 0.646], '--', color='#666666', linewidth=0.8, zorder=2)
+ax.plot([0.3, 1.3], [c_val, c_val], '--', color='#666666', linewidth=0.8, zorder=2)
+ax.plot([1.3, 2.3], [p0, p0], '--', color='#666666', linewidth=0.8, zorder=2)
+
 
 # Value labels
-ax.text(0, 0.697 + 0.004, '0.697', ha='center', va='bottom', fontsize=9, fontweight='bold')
-ax.text(1, 0.697 - 0.026, '$-$0.051', ha='center', va='center', fontsize=8,
+def _signed(v):
+    return f"$-${abs(v):.3f}" if v < 0 else f"+{v:.3f}"
+
+
+ax.text(0, c_val + 0.004, f'{c_val:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+ax.text(1, c_val + te / 2, _signed(te), ha='center', va='center', fontsize=8,
         fontweight='bold', color='white')
-ax.text(2, 0.646 + 0.037, '+0.074', ha='center', va='center', fontsize=8,
+ax.text(2, p0 + ie / 2, _signed(ie), ha='center', va='center', fontsize=8,
         fontweight='bold', color='white')
-ax.text(3, 0.720 + 0.004, '0.720', ha='center', va='bottom', fontsize=9, fontweight='bold')
+ax.text(3, p100 + 0.004, f'{p100:.3f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
 
 # Total annotation
-ax.annotate('', xy=(3, 0.738), xytext=(0, 0.738),
+top = max(c_val, p100) + 0.018
+ax.annotate('', xy=(3, top), xytext=(0, top),
             arrowprops=dict(arrowstyle='<->', color='#555555', lw=1.2))
-ax.text(1.5, 0.742, 'Total +0.023, n.s.', ha='center', fontsize=8, color='#555555')
+ax.text(1.5, top + 0.004,
+        f'Total {_signed(p100 - c_val)}' + ('' if D["total_sig"] else ', n.s.'),
+        ha='center', fontsize=8, color='#555555')
 
 ax.set_xticks(range(4))
 ax.set_xticklabels(labels, fontsize=8)
 ax.set_ylabel('PR-AUC', fontsize=9)
-ax.set_ylim(0.58, 0.77)
+ax.set_ylim(min(te_ci_lo, p0) - 0.04, top + 0.03)
 ax.tick_params(labelsize=7)
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
@@ -109,7 +153,11 @@ print("  Saved decomposition_waterfall.pdf")
 # ============================================================
 print("Generating UMAP 2x2...", flush=True)
 
-cache = np.load(f'{OUT}/umap_cache.npz')
+umap_cache = OUT_ROOT / "silhouette" / "umap_cache.npz"
+if not umap_cache.exists():
+    print(f"  {umap_cache} not found; run run_silhouette.py first. Skipping UMAP figure.")
+    raise SystemExit(0)
+cache = np.load(umap_cache)
 feats_c, feats_p0, feats_p100, feats_pfd = cache['feats_c'], cache['feats_p0'], cache['feats_p100'], cache['feats_pfd']
 y_te = cache['y_te']
 pos, neg = np.where(y_te == 1)[0], np.where(y_te == 0)[0]
@@ -162,10 +210,10 @@ ax_bar = fig.add_subplot(gs[:, 2])
 # Panel border colors match condition
 panel_colors = [COL_C, COL_P0, COL_P100, COL_PFD]
 umap_panels = [
-    (ax_a, emb_c,    '(a) $C$ — abstract baseline', COL_C),
-    (ax_b, emb_p0,   '(b) $P$@0% — FT-trained, abs. input', COL_P0),
-    (ax_c, emb_p100, '(c) $P$@100% — FT-trained, FT input', COL_P100),
-    (ax_d, emb_pfd,  '(d) $C_{\\mathrm{PFD}}$ — PFD-nudged', COL_PFD),
+    (ax_a, emb_c,    '(a) $C$, abstract baseline', COL_C),
+    (ax_b, emb_p0,   '(b) $P$@0%, FT-trained, abs. input', COL_P0),
+    (ax_c, emb_p100, '(c) $P$@100%, FT-trained, FT input', COL_P100),
+    (ax_d, emb_pfd,  '(d) $C_{\\mathrm{PFD}}$, PFD-nudged', COL_PFD),
 ]
 
 for ax, e, title, col in umap_panels:
@@ -221,11 +269,11 @@ for i, (v, bar) in enumerate(zip(sils, bars)):
 
 # Top annotation with matching colors
 fig.text(0.38, 0.93,
-         'a → b: Training effect (TE = $-$0.051, large shift)   |   b ≈ c: IE through classifier head, not CLS',
+         f'a to b: Training effect (TE = {_signed(te)})   |   b vs c: IE through classifier head, not CLS',
          ha='center', fontsize=6.5, color='#555555', fontweight='bold')
 
 plt.savefig(f'{OUT}/umap_4panel.pdf', dpi=300, bbox_inches='tight')
 print(f"  Saved umap_4panel.pdf  Sil: C={sil_c:.3f} P0={sil_p0:.3f} P100={sil_p100:.3f} PFD={sil_pfd:.3f}")
 
-print("\nDone! Unified palette applied to all Python figures.")
+print("\nDone.")
 print(f"  Palette: C={COL_C}, P@0%={COL_P0}, P@100%={COL_P100}, PFD={COL_PFD}")

@@ -3,27 +3,20 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/bert_with_pooling.py
 from __future__ import annotations
 
 from typing import Optional, List, Union
-import warnings
-import json, os
 import torch
 from torch import Tensor
 from torch.nn import Module
-from transformers import BatchEncoding, PreTrainedTokenizerBase, AutoModel, AutoConfig
-from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
-from pathlib import Path
+from transformers import BatchEncoding, AutoModel, AutoConfig
+from torch.utils.data import Dataset, DataLoader, SequentialSampler
 
 from belt_plus.bert import BertBase
 from belt_plus.splitting import transform_list_of_texts
-from belt_plus.exceptions import InconsistentSplittingParamsException
 from belt_plus.neural_networks.pooling_nn import PoolingNeuralNetwork
 from belt_plus.section_aware import tokenize_section_aware_pooled, register_tag_tokens
 
-from torch.nn import CrossEntropyLoss, MSELoss
-from torch.optim import AdamW
 
 
 def collate_fn_pooled_tokens(data):
@@ -129,7 +122,7 @@ class BertWithPooling(BertBase):
         neural_network: Optional[Module] = None,
         pretrained_model_name_or_path: Optional[str] = "bert-base-uncased",
         preloaded_state_dict: Optional[dict] = None,
-        device: str = "cuda:0",
+        device: str = "cuda",
         many_gpus: bool = False,
         use_chunk_transform: bool = False,
         chunk_transform_layers: int = 1,
@@ -406,17 +399,3 @@ class BertWithPooling(BertBase):
             )
             feats.append(f.cpu())
         return torch.cat(feats)
-
-    # Optional xcore helpers left commented for future use
-    # def save_xcore(self, save_path: str, config: dict = None):
-    #     encoder = self.get_core_encoder()
-    #     if hasattr(encoder, "save_pretrained"):
-    #         save_path = Path(save_path)
-    #         save_dir = save_path if save_path.suffix == "" else save_path.parent
-    #         encoder.save_pretrained(save_dir)
-    #         if config:
-    #             with open(save_dir / "xcore_config.json", "w") as f:
-    #                 json.dump(config, f, indent=2)
-    #         print(f"[xcore] Saved encoder to {save_dir}")
-    #     else:
-    #         raise NotImplementedError("Encoder doesn't support save_pretrained")

@@ -3,7 +3,6 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/section_aware.py
 from __future__ import annotations
 
 import re
@@ -64,11 +63,11 @@ def parse_tagged_sections(text: str) -> List[Tuple[str, str]]:
             sections.append((current, body.strip()))
 
         if self_match is not None and self_match.start() == next_match.start():
-            current = _normalise(self_match.group("name"))
+            current = _normalize(self_match.group("name"))
             cursor = self_match.end()
             continue
 
-        current = _normalise(next_match.group("name"))
+        current = _normalize(next_match.group("name"))
         cursor = next_match.end()
 
     if not sections:
@@ -214,7 +213,7 @@ def tokenize_section_aware_pooled(
 # ---------------------------------------------------------------------------
 
 
-def _normalise(name: Optional[str]) -> str:
+def _normalize(name: Optional[str]) -> str:
     cleaned = (name or "").strip()
     return cleaned if cleaned else "Unlabeled"
 
@@ -227,7 +226,7 @@ def _earliest(*matches: Optional[re.Match]) -> Optional[re.Match]:
 
 
 def _section_header(name: str) -> str:
-    clean = _normalise(name)
+    clean = _normalize(name)
     return f"<s>{clean}</s> "
 
 
@@ -267,7 +266,7 @@ def _build_chunks(
     for name, body in sections:
         header_ids = _section_header_tokens(tokenizer, name)
         body_ids = _section_body_tokens(tokenizer, body)
-        section_key = _normalise(name).casefold()
+        section_key = _normalize(name).casefold()
         for tokens_piece in _section_pieces(
             header_ids=header_ids,
             body_ids=body_ids,

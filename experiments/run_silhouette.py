@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Compute cosine silhouette scores across all datasets, folds, and conditions.
 
-Outputs: papers/silhouette_table.csv
-Conditions: C, P@0%, P@100%, C_PFD
+Conditions: C, P@0%, P@100%, C_PFD. Requires the C and P checkpoints and CF
+logits written by run_crossfit.py (under $FTD_OUT_DIR/crossfit/biomedbert-abs/).
+Also caches the CLS features of the first dataset-fold for the UMAP figure
+(gen_figures.py).
+
+Usage (from the repository root):
+  python experiments/run_silhouette.py --gpu 0 --datasets pfas,bpa,cd008122,cd011431,cd012069,cd012661
 """
-import gc, json, os, sys, argparse
+import gc, json, argparse
 import numpy as np, torch
-from pathlib import Path
 from sklearn.metrics import silhouette_score
 
 
@@ -24,10 +28,11 @@ MODEL = ENCODERS["biomedbert-abs"]
 SEED = 42
 DATASETS = args.datasets.split(",")
 
-C_CKPT_DIR = Path("papers/output_warmstart_pfd_crossfit/checkpoints")
-CF_LOGITS_DIR = Path("papers/output_warmstart_pfd_crossfit/cached_logits")
-P_CKPT_DIR = Path("output/rq2_kd_matrix_v2/teacher_checkpoints")
-OUT = Path("papers/silhouette_results")
+CROSSFIT = OUT_ROOT / "crossfit" / "biomedbert-abs"
+C_CKPT_DIR = CROSSFIT / "checkpoints"
+CF_LOGITS_DIR = CROSSFIT / "cached_logits"
+P_CKPT_DIR = CROSSFIT / "checkpoints"
+OUT = OUT_ROOT / "silhouette"
 OUT.mkdir(parents=True, exist_ok=True)
 
 def extract_cls(model, texts, device, batch_size=32):
@@ -92,7 +97,7 @@ for ds in DATASETS:
         cf_logits = CF_LOGITS_DIR / ds / f"CF5_{ds}_f{fold}.pt"
 
         if not c_ckpt.exists() or not p_ckpt.exists():
-            print(f"    Missing checkpoint, skip", flush=True)
+            print("    Missing checkpoint, skip (run run_crossfit.py first)", flush=True)
             continue
 
         row = {"dataset": ds, "fold": fold}
@@ -133,6 +138,12 @@ for ds in DATASETS:
             row["sil_pfd"] = float(silhouette_score(feats_pfd, y_te, metric='cosine'))
         else:
             row["sil_pfd"] = None
+
+        umap_cache = OUT / "umap_cache.npz"
+        if not umap_cache.exists() and cf_logits.exists():
+            np.savez(umap_cache, feats_c=feats_c, feats_p0=feats_p0,
+                     feats_p100=feats_p100, feats_pfd=feats_pfd, y_te=y_te,
+                     dataset=ds, fold=fold)
 
         row["sil_c"] = float(silhouette_score(feats_c, y_te, metric='cosine'))
         row["sil_p0"] = float(silhouette_score(feats_p0, y_te, metric='cosine'))

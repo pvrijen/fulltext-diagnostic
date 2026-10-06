@@ -185,7 +185,7 @@ def build_dag(n_folds: int) -> dict[str, JobDef]:
 
 
 def load_state(output_dir: Path, dag: dict[str, JobDef]) -> dict[str, JobDef]:
-    """Synchronise job states from disk markers.
+    """Synchronize job states from disk markers.
 
     Parameters
     ----------
@@ -419,6 +419,11 @@ def generate_slurm_scripts(
                 f"--fold $SLURM_ARRAY_TASK_ID {common}"
             ),
         }),
+        ("07_report.sbatch", {
+            "job-name": "ftd-report", "partition": "short",
+            "time": "00:05:00", "mem": "4G",
+            "command": f"fulltext-diagnostic run-job report {common}",
+        }),
     ]
 
     for fname, opts in scripts:
@@ -437,8 +442,10 @@ def generate_slurm_scripts(
         f"{slurm_dir}/05_diagnose.sbatch)\n"
         f"F=$(sbatch --parsable --dependency=afterok:$D "
         f"{slurm_dir}/06_pfd.sbatch)\n"
+        f"R=$(sbatch --parsable --dependency=afterok:$F "
+        f"{slurm_dir}/07_report.sbatch)\n"
         'echo "Submitted: split=$S trainC=$C trainP=$P eval=$E '
-        'diag=$D pfd=$F"\n'
+        'diag=$D pfd=$F report=$R"\n'
     )
     (slurm_dir / "submit_all.sh").write_text(submit_script)
     (slurm_dir / "submit_all.sh").chmod(0o755)

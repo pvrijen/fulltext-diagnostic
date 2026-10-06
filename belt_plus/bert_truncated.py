@@ -3,27 +3,26 @@
 # Extended with knowledge distillation, section-aware processing,
 # and pooling enhancements for this work.
 
-# src/belt_plus/bert_truncated.py
 from __future__ import annotations
 
-from typing import Optional, List, Tuple, Union, Callable
+from typing import Optional, List, Tuple, Union
 
 import torch
-import torch.nn.functional as F
 from torch import nn
-from torch.optim import AdamW
-from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import Dataset
 from transformers import (
     BatchEncoding,
     PreTrainedTokenizerBase,
     AutoModel,
     AutoConfig,
-    get_linear_schedule_with_warmup,
 )
 
 from belt_plus.bert import BertBase
 from belt_plus.neural_networks.truncation_nn import TruncationNeuralNetwork
 from belt_plus.section_aware import tokenize_section_aware_truncated, register_tag_tokens
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def collate_fn_truncated(batch):
@@ -97,7 +96,7 @@ class BertTruncated(BertBase):
         neural_network: Optional[TruncationNeuralNetwork] = None,
         pretrained_model_name_or_path: str = "bert-base-uncased",
         preloaded_state_dict: Optional[dict] = None,
-        device: str = "cuda:0",
+        device: str = "cuda",
         many_gpus: bool = False,
         dropout_rate: float = 0.1,
         use_amp: bool = False,
@@ -200,7 +199,7 @@ class BertTruncated(BertBase):
                 register_tag_tokens(self.tokenizer, encoder)
             missing, unexpected = encoder.load_state_dict(pending_state_dict, strict=False)
             if len(missing) > 0 or len(unexpected) > 0:
-                print(
+                logger.info(
                     f"[BertTruncated] Warning: load_state_dict non-strict. "
                     f"Missing: {len(missing)} | Unexpected: {len(unexpected)}"
                 )
@@ -256,334 +255,3 @@ class BertTruncated(BertBase):
             input_ids=input_ids,
             attention_mask=attention_mask,
         )
-
-    def _ensure_kd_projector(self, teacher_feat_dim: int, optimizer: AdamW):
-        """
-        Create a linear projector H -> teacher_feat_dim iff dims mismatch.
-        Register its params with the optimizer so it learns jointly.
-        """
-        student_hidden = getattr(self.neural_network, "hidden_size", None)
-        if student_hidden is None:
-            # Fallback to encoder config
-            student_hidden = getattr(self.neural_network.encoder.config, "hidden_size", 768)
-
-        if teacher_feat_dim == student_hidden:
-            self._kd_project = None
-            return
-
-        # Recreate only if needed or different
-        if self._kd_project is not None:
-            if (self._kd_project.in_features, self._kd_project.out_features) == (student_hidden, teacher_feat_dim):
-                return
-
-        self._kd_project = torch.nn.Linear(student_hidden, teacher_feat_dim).to(self.device)
-        optimizer.add_param_group({"params": self._kd_project.parameters(), "lr": self.learning_rate, "weight_decay": self.weight_decay})
-
-    # ----------------------------
-    # Training (with optional KD)
-    # ----------------------------
-    def fit(
-        self,
-        x_train: list[str],
-        y_train: list[int],
-        x_val: Optional[list[str]] = None,
-        y_val: Optional[list[int]] = None,
-        epochs: Optional[int] = None,
-        patience: Optional[int] = 2,
-        min_delta: float = 0.0,
-        save_best_model_path: Optional[str] = None,
-        on_epoch_end: Optional[Callable[[int, dict], None]] = None,
-        early_stopping: bool = True,
-        # --- KD additions ---
-        kd_type: str = "none",                              # "none" | "logit" | "feature" | "combined"
-        kd_targets_train: Optional[torch.Tensor] = None,    # logits or features (teacher)
-        kd_targets_val: Optional[torch.Tensor] = None,      # optional for val monitoring
-        kd_alpha: float = 0.5,                              # weight for KD loss vs supervised
-        kd_temperature: float = 2.0,                        # temperature for logit KD
-        kd_feature_weight: float = 1.0,                     # scale for feature KD
-        # Combined KD: logit + feature simultaneously
-        kd_logit_targets_train: Optional[torch.Tensor] = None,
-        kd_logit_targets_val: Optional[torch.Tensor] = None,
-        kd_feat_targets_train: Optional[torch.Tensor] = None,
-        kd_feat_targets_val: Optional[torch.Tensor] = None,
-        # NEW (optional): init student tails from teacher and choose cosine vs MSE KD
-        teacher_feature_head_state: Optional[dict] = None,
-        teacher_classifier_state: Optional[dict] = None,
-        use_cosine_kd: bool = True,
-    ):
-        if epochs is None:
-            epochs = self.epochs
-
-        # Tokenize + datasets. For KD we prefer deterministic order → SequentialSampler.
-        use_kd = (kd_type != "none") and (kd_targets_train is not None or kd_type == "combined")
-        train_tokens = self._tokenize(x_train)
-        train_dataset = self._create_dataset(train_tokens, y_train)
-        train_loader = DataLoader(
-            train_dataset,
-            sampler=SequentialSampler(train_dataset) if use_kd else RandomSampler(train_dataset),
-            batch_size=self.batch_size,
-            collate_fn=self.collate_fn,
-            **self._build_loader_kwargs(self.train_num_workers),
-        )
-
-        if x_val is not None and y_val is not None:
-            val_tokens = self._tokenize(x_val)
-            val_dataset = self._create_dataset(val_tokens, y_val)
-            val_loader = DataLoader(
-                val_dataset,
-                sampler=SequentialSampler(val_dataset),
-                batch_size=self.batch_size,
-                collate_fn=self.collate_fn,
-                **self._build_loader_kwargs(self.eval_num_workers),
-            )
-        else:
-            val_loader = None
-
-        optimizer = self._create_optimizer(self.neural_network.parameters())
-        total_steps = max(1, len(train_loader) * epochs)
-        # Use warmup_ratio from params (default 0.05)
-        warmup_ratio = float(self._params.get("warmup_ratio", 0.05))
-        warmup_ratio = max(0.0, min(warmup_ratio, 0.5))  # clamp to sane range
-        warmup_steps = int(warmup_ratio * total_steps)
-        scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
-        self.scheduler = scheduler
-
-        # If feature KD, possibly add projector to teacher dim and load teacher tails
-        if kd_type == "feature" and kd_targets_train is not None:
-            teacher_dim = int(kd_targets_train.size(-1))
-            self._ensure_kd_projector(teacher_dim, optimizer)
-
-            # Initialize student tails from teacher to place both in same feature space
-            if teacher_feature_head_state:
-                try:
-                    self.neural_network.feature_head.load_state_dict(teacher_feature_head_state, strict=False)
-                    print("[KD] Loaded teacher feature_head into student.")
-                except Exception as e:
-                    print(f"[KD] warn: couldn't load teacher feature_head: {e}")
-
-            if teacher_classifier_state:
-                try:
-                    self.neural_network.classifier.load_state_dict(teacher_classifier_state, strict=False)
-                    print("[KD] Loaded teacher classifier into student.")
-                except Exception as e:
-                    print(f"[KD] warn: couldn't load teacher classifier: {e}")
-
-        best_val_loss = float('inf'); wait = 0; best_state = None
-
-        mse = torch.nn.MSELoss()
-
-        def _kd_logit_loss(student_logits: torch.Tensor, teacher_logits: torch.Tensor) -> torch.Tensor:
-            t = kd_temperature
-            if self.problem_type == "multi_class_classification":
-                # KL divergence for multiclass
-                s = F.log_softmax(student_logits / t, dim=-1)
-                y = F.softmax(teacher_logits / t, dim=-1)
-                loss = F.kl_div(s, y, reduction='batchmean')
-            else:
-                # temperature-soft BCE for binary
-                s = torch.sigmoid(student_logits / t).squeeze(-1)
-                y = torch.sigmoid(teacher_logits / t).squeeze(-1)
-                eps = 1e-6
-                loss = -(y * torch.log(s + eps) + (1 - y) * torch.log(1 - s + eps)).mean()
-            return (t * t) * loss
-
-        for epoch in range(epochs):
-            self.current_epoch = epoch
-            self.neural_network.train()
-            epoch_loss = 0.0
-
-            kd_cursor = 0  # rolling cursor into kd_targets
-            kd_logit_cursor = 0  # for combined mode
-            kd_feat_cursor = 0   # for combined mode
-
-            for step, batch in enumerate(train_loader):
-                if len(batch) == 3:
-                    input_ids, attention_mask, labels = batch
-                elif len(batch) == 2:
-                    input_ids, attention_mask = batch
-                    labels = None
-                else:
-                    raise ValueError("Unexpected batch format for truncated training")
-
-                input_ids = input_ids.to(self.device, non_blocking=True)
-                attention_mask = attention_mask.to(self.device, non_blocking=True)
-                if labels is not None:
-                    labels = labels.to(self.device, non_blocking=True)
-
-                logits = self.neural_network(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                )
-
-                # supervised loss (binary / multi-class)
-                if labels is not None:
-                    if self.problem_type == "binary_classification":
-                        sup_loss = F.binary_cross_entropy_with_logits(
-                            logits.squeeze(1), labels.to(self.device, non_blocking=True).float()
-                        )
-                    elif self.problem_type == "multi_class_classification":
-                        sup_loss = F.cross_entropy(logits, labels.to(self.device, non_blocking=True).long())
-                    else:
-                        sup_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-                else:
-                    sup_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-
-                # KD loss
-                kd_loss = torch.tensor(0.0, device=self.device)
-                if use_kd:
-                    B = input_ids.size(0)
-
-                    if kd_type == "combined":
-                        # Combined uses separate target tensors; skip shared kd_batch
-                        pass
-                    else:
-                        kd_batch = kd_targets_train[kd_cursor: kd_cursor + B].to(self.device, non_blocking=True)
-                        kd_cursor += B
-
-                    if kd_type == "logit":
-                        kd_loss = _kd_logit_loss(logits, kd_batch)
-
-                    elif kd_type == "feature":
-                        # Student post-FeatureHead features
-                        stu_feat = self._student_features(
-                            input_ids,
-                            attention_mask,
-                        )  # [B, H]
-                        if self._kd_project is not None:
-                            stu_feat = self._kd_project(stu_feat)  # [B, H_t]
-
-                        # Cosine distance (default) or normalized MSE
-                        stu   = F.normalize(stu_feat, dim=-1, eps=1e-6)
-                        teach = F.normalize(kd_batch, dim=-1, eps=1e-6)
-
-                        if use_cosine_kd:
-                            kd_loss = kd_feature_weight * (1.0 - F.cosine_similarity(stu, teach, dim=-1).mean())
-                        else:
-                            kd_loss = kd_feature_weight * mse(stu, teach)
-
-                    elif kd_type == "combined":
-                        # Simultaneous logit + feature KD
-                        B = input_ids.size(0)
-                        logit_batch = kd_logit_targets_train[kd_logit_cursor: kd_logit_cursor + B].to(self.device, non_blocking=True)
-                        feat_batch = kd_feat_targets_train[kd_feat_cursor: kd_feat_cursor + B].to(self.device, non_blocking=True)
-                        kd_logit_cursor += B
-                        kd_feat_cursor += B
-
-                        # Logit component
-                        logit_loss = _kd_logit_loss(logits, logit_batch)
-
-                        # Feature component
-                        stu_feat = self._student_features(input_ids, attention_mask)
-                        if self._kd_project is not None:
-                            stu_feat = self._kd_project(stu_feat)
-                        stu = F.normalize(stu_feat, dim=-1, eps=1e-6)
-                        teach = F.normalize(feat_batch, dim=-1, eps=1e-6)
-                        if use_cosine_kd:
-                            feat_loss = kd_feature_weight * (1.0 - F.cosine_similarity(stu, teach, dim=-1).mean())
-                        else:
-                            feat_loss = kd_feature_weight * mse(stu, teach)
-
-                        kd_loss = 0.5 * logit_loss + 0.5 * feat_loss
-                    else:
-                        raise ValueError(f"Unknown kd_type: {kd_type}")
-
-                loss = (1.0 - kd_alpha) * sup_loss + kd_alpha * kd_loss
-                loss.backward()
-
-                torch.nn.utils.clip_grad_norm_(self.neural_network.parameters(), self.max_grad_norm)
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-                if scheduler is not None and not (epoch == 0 and step == 0):
-                    scheduler.step()
-
-                epoch_loss += float(loss.detach().cpu())
-
-            # === validation ===
-            val_loss = None
-            if val_loader is not None:
-                self.neural_network.eval()
-                with torch.no_grad():
-                    epoch_v = 0.0
-                    kd_cursor = 0
-                    kd_logit_cursor = 0
-                    kd_feat_cursor = 0
-                    for batch in val_loader:
-                        if len(batch) == 3:
-                            input_ids, attention_mask, labels = batch
-                        elif len(batch) == 2:
-                            input_ids, attention_mask = batch
-                            labels = None
-                        else:
-                            raise ValueError("Unexpected batch format for truncated validation")
-
-                        input_ids = input_ids.to(self.device)
-                        attention_mask = attention_mask.to(self.device)
-                        if labels is not None:
-                            labels = labels.to(self.device)
-
-                        logits = self.neural_network(
-                            input_ids=input_ids,
-                            attention_mask=attention_mask,
-                        )
-
-                        if self.problem_type == "binary_classification" and labels is not None:
-                            sup_v = F.binary_cross_entropy_with_logits(
-                                logits.squeeze(1), labels.to(self.device, non_blocking=True).float()
-                            )
-                        else:
-                            sup_v = torch.tensor(0.0, device=self.device)
-
-                        kd_v = torch.tensor(0.0, device=self.device)
-                        if use_kd and kd_targets_val is not None:
-                            B = input_ids.size(0)
-                            kd_batch = kd_targets_val[kd_cursor: kd_cursor + B].to(self.device, non_blocking=True)
-                            kd_cursor += B
-
-                            if kd_type == "logit":
-                                kd_v = _kd_logit_loss(logits, kd_batch)
-
-                            elif kd_type == "feature":
-                                stu_feat = self._student_features(
-                                    input_ids,
-                                    attention_mask,
-                                )
-                                if self._kd_project is not None:
-                                    stu_feat = self._kd_project(stu_feat)
-
-                                stu   = F.normalize(stu_feat, dim=-1, eps=1e-6)
-                                teach = F.normalize(kd_batch, dim=-1, eps=1e-6)
-
-                                if use_cosine_kd:
-                                    kd_v = kd_feature_weight * (1.0 - F.cosine_similarity(stu, teach, dim=-1).mean())
-                                else:
-                                    kd_v = kd_feature_weight * mse(stu, teach)
-
-                        epoch_v += float(((1.0 - kd_alpha) * sup_v + kd_alpha * kd_v).detach().cpu())
-
-                    val_loss = epoch_v / max(1, len(val_loader))
-
-                # early stopping bookkeeping
-                if val_loss < (best_val_loss - min_delta):
-                    best_val_loss, wait = val_loss, 0
-                    best_state = self.neural_network.state_dict()
-                    if save_best_model_path:
-                        torch.save(best_state, save_best_model_path)
-                else:
-                    wait += 1
-                    if wait >= (patience or 0) and early_stopping:
-                        break  # stop next epoch
-
-            if on_epoch_end:
-                on_epoch_end(
-                    epoch,
-                    {
-                        "epoch": epoch,
-                        "train_loss": epoch_loss / max(1, len(train_loader)),
-                        "val_loss": val_loss,
-                        "model": self,
-                        "best_val_loss": best_val_loss,
-                    },
-                )
-
-        if best_state:
-            self.neural_network.load_state_dict(best_state)

@@ -1,38 +1,60 @@
-"""Standalone helpers for paper reproduction experiments.
+"""Shared helpers for the paper's experiment scripts.
 
-Extracts the functions and constants needed from the thesis codebase
-(run_rq2_unified.py, run_pooling_chapter.py) so experiments can run
-without the full thesis infrastructure.
+Hyperparameters, data loading, cross-validation splits and evaluation
+utilities. All hyperparameters match the paper's hyperparameter table.
 
-All hyperparameters match the paper's reported values exactly.
+Paths
+-----
+Scripts read datasets from ``$FTD_DATA_DIR`` (default ``data/``) and write
+results under ``$FTD_OUT_DIR`` (default ``output/``). Both are resolved
+relative to the current working directory, so run the scripts from the
+repository root or set the variables to absolute paths.
+
+Dataset format
+--------------
+``load_data`` accepts the CSV format described in the main README
+(``id, text_abstract, text_fulltext, label``). It also accepts the original
+curation export used for the paper (``PMID, MEDLINE, PMC, Status``) and
+converts it on the fly: ``Status == "Included"`` becomes label 1, articles
+without a PMC full text are dropped, and the abstract is prepended to the
+body when the export did not already include it.
 """
-import os, random, time
+import os
+import random
+import re
+import time
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
-from pathlib import Path
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import average_precision_score
+from sklearn.model_selection import StratifiedKFold
 
-# ═══════════════════════════════════════════════════════════
-# Constants (from run_rq2_unified.py + run_pooling_chapter.py)
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+
+DATA_DIR = Path(os.environ.get("FTD_DATA_DIR", "data"))
+OUT_ROOT = Path(os.environ.get("FTD_OUT_DIR", "output"))
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 ENCODERS = {
     "biomedbert-abs": "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract",
     "biobert": "dmis-lab/biobert-base-cased-v1.2",
     "bert": "bert-base-uncased",
     "roberta": "roberta-base",
+    "bio-longformer": "kiddothe2b/biomedical-longformer-base",
+    "biocmodernbert": "answerdotai/ModernBERT-base",
 }
 
-DATASETS = {
-    "pfas": "data/dataset/pfas.csv",
-    "bpa": "data/dataset/bpa.csv",
-    "cd008122": "data/dataset/cd008122.csv",
-    "cd011431": "data/dataset/cd011431.csv",
-    "cd012069": "data/dataset/cd012069.csv",
-    "cd012661": "data/dataset/cd012661.csv",
-}
+DATASET_NAMES = ["pfas", "bpa", "cd008122", "cd011431", "cd012069", "cd012661"]
+DATASETS = {name: DATA_DIR / f"{name}.csv" for name in DATASET_NAMES}
+
+SEED = 42
 
 # Student (abstract baseline) hyperparameters
 HP_LR_C = 3e-05
@@ -62,19 +84,20 @@ NUDGE_ALPHA = 0.1
 NUDGE_TEMP = 4.0
 
 
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
 # Data loading
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
+
+_TAG_RE = re.compile(r"<[se]:[^>]+>")
+
 
 def _strip_tags(texts):
     """Remove section tags (<s:...> / <e:...>) from text."""
-    import re
-    pattern = re.compile(r"<[se]:[^>]+>")
-    return [pattern.sub("", t).strip() for t in texts]
+    return [_TAG_RE.sub("", str(t)).strip() for t in texts]
 
 
 def _fix_pmc_text(pmc_text, medline_text):
-    """Ensure abstract is prepended to PMC full text."""
+    """Ensure the abstract is prepended to the PMC full text."""
     if not pmc_text or not isinstance(pmc_text, str):
         return str(medline_text or "")
     if medline_text and str(medline_text) not in pmc_text[:len(str(medline_text)) + 200]:
@@ -83,38 +106,59 @@ def _fix_pmc_text(pmc_text, medline_text):
 
 
 def load_data(dataset_name):
-    """Load dataset (PMC-only subset).
+    """Load a dataset.
 
-    Returns: (df, texts_full, texts_medline, labels)
+    Returns ``(df, texts_full, texts_abstract, labels)``.
     """
-    csv_path = DATASETS[dataset_name]
+    csv_path = DATASETS.get(dataset_name, DATA_DIR / f"{dataset_name}.csv")
+    if not Path(csv_path).exists():
+        raise FileNotFoundError(
+            f"{csv_path} not found. Set FTD_DATA_DIR or place the CSV under "
+            f"{DATA_DIR}/. See README.md for the expected columns."
+        )
     df = pd.read_csv(csv_path)
-    df["label"] = df["Status"].apply(lambda x: 1 if x == "Included" else 0)
-    has_pmc = df["PMC"].notna() & (df["PMC"].astype(str).str.len() > 50)
-    df = df[has_pmc].copy()
-    df["has_pmc"] = True
 
-    fixed = [_fix_pmc_text(row["PMC"], row["MEDLINE"]) for _, row in df.iterrows()]
-    texts_full = _strip_tags(fixed)
-    texts_medline = _strip_tags([str(row["MEDLINE"] or "") for _, row in df.iterrows()])
-    labels = df["label"].tolist()
-    return df, texts_full, texts_medline, labels
+    if {"text_abstract", "text_fulltext", "label"} <= set(df.columns):
+        df = df.copy()
+        df["text_abstract"] = df["text_abstract"].fillna("").astype(str)
+        df["text_fulltext"] = df["text_fulltext"].fillna("").astype(str)
+        has_ft = df["text_fulltext"].str.len() > 50
+        df = df[has_ft].copy()
+        texts_full = _strip_tags(df["text_fulltext"])
+        texts_abs = _strip_tags(df["text_abstract"])
+        labels = df["label"].astype(int).tolist()
+        return df, texts_full, texts_abs, labels
+
+    if {"MEDLINE", "PMC", "Status"} <= set(df.columns):
+        df = df.copy()
+        df["label"] = df["Status"].apply(lambda x: 1 if x == "Included" else 0)
+        has_pmc = df["PMC"].notna() & (df["PMC"].astype(str).str.len() > 50)
+        df = df[has_pmc].copy()
+        fixed = [_fix_pmc_text(row["PMC"], row["MEDLINE"]) for _, row in df.iterrows()]
+        texts_full = _strip_tags(fixed)
+        texts_abs = _strip_tags([str(row["MEDLINE"] or "") for _, row in df.iterrows()])
+        labels = df["label"].tolist()
+        return df, texts_full, texts_abs, labels
+
+    raise ValueError(
+        f"{csv_path}: expected columns id,text_abstract,text_fulltext,label "
+        f"(or the legacy PMID,MEDLINE,PMC,Status export)."
+    )
 
 
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
 # Cross-validation utilities
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
 
 def make_cv_splits(labels, seed, n_splits=5):
-    """Deterministic stratified k-fold splits."""
+    """Deterministic stratified k-fold splits (seed 42 reproduces the paper)."""
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     return list(skf.split(range(len(labels)), labels))
 
 
 def make_val_split(train_idx, labels, seed, fold, val_size=0.2):
-    """Split train indices into train_sub + val_sub."""
+    """Split train indices into train_sub + val_sub (random, seed + fold)."""
     rng = np.random.RandomState(seed + fold)
-    y_train = np.array([labels[i] for i in train_idx])
     n_val = max(1, int(len(train_idx) * val_size))
     idx = rng.permutation(len(train_idx))
     val_mask = np.zeros(len(train_idx), dtype=bool)
@@ -133,12 +177,12 @@ def set_seeds(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
 # Evaluation
-# ═══════════════════════════════════════════════════════════
+# ---------------------------------------------------------------------------
 
 def timed_eval(model, texts, y_true):
-    """Evaluate model and return PR-AUC + timing."""
+    """Evaluate a model and return PR-AUC, WSS@95, timing and scores."""
     t0 = time.time()
     with torch.no_grad():
         scores = model.predict_scores(texts)
@@ -146,7 +190,8 @@ def timed_eval(model, texts, y_true):
         scores = scores.cpu().numpy().flatten()
     elapsed = time.time() - t0
     prauc = float(average_precision_score(y_true, scores))
-    return {"pr_auc": prauc, "time": elapsed, "probs": scores.tolist()}
+    return {"pr_auc": prauc, "wss95": wss95(scores, y_true),
+            "time": elapsed, "probs": np.asarray(scores).tolist()}
 
 
 def wss95(probs, labels):

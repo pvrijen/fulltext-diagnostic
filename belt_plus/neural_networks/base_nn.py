@@ -4,7 +4,6 @@
 # and pooling enhancements for this work.
 
 from abc import ABC, abstractmethod
-import torch
 from torch import nn, Tensor
 
 class BaseNeuralNetwork(ABC, nn.Module):

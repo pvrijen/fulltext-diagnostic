@@ -9,10 +9,12 @@ from __future__ import annotations
 import os
 import torch
 from torch import nn, Tensor
-import torch.nn.functional as F
 
 from belt_plus.neural_networks.base_nn import BaseNeuralNetwork
 from belt_plus.neural_networks.pooling_nn import FeatureHead  # shared tail
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TruncationNeuralNetwork(nn.Module):
@@ -58,7 +60,7 @@ class TruncationNeuralNetwork(nn.Module):
         if self._log_signature:
             enc_name = getattr(getattr(self.encoder, "config", None), "name_or_path", None) \
                        or self.encoder.__class__.__name__
-            print(
+            logger.info(
                 "[TruncNN:init] "
                 f"encoder={enc_name} | H={self.hidden_size} | num_labels={num_labels} | "
                 f"token_pooling={self.token_pooling_strategy} | dropout={dropout_rate}",
@@ -68,7 +70,7 @@ class TruncationNeuralNetwork(nn.Module):
     # ---- forward-time signature ----
     def _dump_forward_signature(self, input_ids: Tensor, attention_mask: Tensor) -> None:
         if self._log_signature and not self._sig_fwd_once:
-            print(
+            logger.info(
                 "[TruncNN:fwd] shapes: "
                 f"ids={tuple(input_ids.shape) if isinstance(input_ids, torch.Tensor) else None} "
                 f"mask={tuple(attention_mask.shape) if isinstance(attention_mask, torch.Tensor) else None} | "
