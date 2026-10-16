@@ -18,11 +18,11 @@ Place one CSV per dataset under `$FTD_DATA_DIR` named `pfas.csv`, `bpa.csv`, `cd
 
 | Paper artifact | Script | Notes |
 |----------------|--------|-------|
-| Encoder comparison on abstracts (Table "Model comparison") | `run_crossfit.py --encoder <key>` | the C row of each run; keys: `biomedbert-abs`, `biobert`, `bert`, `roberta` |
-| TE/IE decomposition, PR-AUC (Table "Training vs. inference decomposition") | `run_crossfit.py` | C, P@0%, P@100% per dataset-fold |
+| Encoder comparison (Table 1, "Encoder comparison") | `run_crossfit.py --encoder <key>` | the C row of each run; keys: `biomedbert-abs`, `biobert`, `bert`, `roberta` |
+| TE/IE decomposition (Table 2, "Training vs. inference decomposition"; both metrics) | `run_crossfit.py` | C, P@0%, P@100% per dataset-fold |
 | TE/IE decomposition, WSS@95 (appendix) | `run_crossfit.py` | `wss95` block of each result |
 | Decomposition across encoder families (appendix) | `run_crossfit.py --encoder bio-longformer`, `--encoder biocmodernbert` | long-context encoders use the same chunking |
-| Cross-fitted PFD vs in-sample PFD (Table "Cross-fitting validation") | `run_crossfit.py` | `IS_PFD`, `CF_PFD` |
+| Cross-fitted PFD vs in-sample PFD (Table 2 PFD column; Supplementary Table S9 and S10 rows; Appendix L) | `run_crossfit.py` | `IS_PFD`, `CF_PFD` |
 | Alpha sensitivity (appendix) | `run_alpha_sweep.py` | needs `run_crossfit.py` outputs |
 | Silhouette scores (appendix) | `run_silhouette.py` | needs `run_crossfit.py` outputs |
 | LLM zero-shot and few-shot screening (appendix) | `run_llm.py` | Qwen2.5-32B-Instruct, Mistral-7B-Instruct-v0.3, 4-bit |
@@ -75,3 +75,7 @@ Per-fold metrics are PR-AUC (`sklearn.metrics.average_precision_score`) and WSS@
 ## Hardware
 
 Experiments were run on NVIDIA H100 GPUs. One dataset (5 folds, C + P + 5 cross-fitted teachers + 2 PFD students) takes about 4 hours on one GPU.
+
+## Analyses added during review
+
+The fourth cell of the two-by-two design, the hard-label control and seed replicate (Table 3), the second encoder family (BiocModernBERT; Table 3, Supplementary Table S11, Appendix N), the soft-label memorisation check (Appendix L) and the statistical summaries (Supplementary Table S9 and the table notes) were produced with the scripts in [`as_run/`](as_run/README.md), kept verbatim as run inside the authors' thesis codebase. Fold indices are the same as in `fold_indices.json`. Per-fold result files are not distributed; the scripts regenerate them.
