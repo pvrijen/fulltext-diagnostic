@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 HERE = Path(__file__).resolve().parent
-EXP14 = Path("/home/paul/fulltext_biocuration/.claude/worktrees/paper-b-v26/papers/paper_b_biocuration_guide/versions/2.8_jamia/scripts/exp14_biocmodernbert_pfd.py")
+EXP14 = HERE / "exp14_biocmodernbert_pfd.py"
 FAMILIES = {
     "primary": Path("/home/paul/fulltext_biocuration/papers/output_warmstart_pfd_crossfit/cached_logits"),
     "second": Path("/home/paul/fulltext_biocuration/papers/output_exp14_biocmb_pfd/logits"),
